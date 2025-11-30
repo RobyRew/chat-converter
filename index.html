@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Export Translator</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Chat Export Translator</h1>
+        <p>Upload a .zip file containing your chat export, select the source and destination platforms, and download the converted chat.</p>
+
+        <div class="form-group">
+            <label for="chatFile">Upload Chat Export (.zip):</label>
+            <input type="file" id="chatFile" accept=".zip" />
+        </div>
+
+        <div class="form-group">
+            <label for="sourcePlatform">Source Platform:</label>
+            <select id="sourcePlatform">
+                <option value="whatsapp">WhatsApp</option>
+                <option value="telegram">Telegram</option>
+                <!-- Add more platforms here -->
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="destPlatform">Destination Platform:</label>
+            <select id="destPlatform">
+                <option value="telegram">Telegram</option>
+                <option value="whatsapp">WhatsApp</option>
+                <!-- Add more platforms here -->
+            </select>
+        </div>
+
+        <button id="convertBtn" disabled>Convert and Download</button>
+        <p id="status" class="status"></p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
