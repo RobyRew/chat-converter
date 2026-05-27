@@ -20,6 +20,9 @@ RUN echo 'server { \
     } \
 }' > /etc/nginx/conf.d/default.conf
 
+# Runtime Umami injection — picks up UMAMI_SCRIPT_URL + UMAMI_WEBSITE_ID from container env.
+COPY --chmod=755 docker-entrypoint.d/30-inject-umami.sh /docker-entrypoint.d/30-inject-umami.sh
+
 EXPOSE 80
 
 CMD ["nginx", "-g", "daemon off;"]
