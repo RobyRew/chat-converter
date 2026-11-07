@@ -10,7 +10,7 @@ machine-readable version is `src/targets/index.ts`, which the web app's "How to 
 | Telegram · Desktop, Web, macOS | no | — | — | — |
 | WhatsApp | no (restores only its own backups) | — | — | `whatsapp-zip` writes its export format |
 | Signal | no | — | — | — |
-| Discord, Messenger, Instagram, iMessage, LINE, KakaoTalk, Viber | no | — | — | — |
+| Discord, Messenger, Instagram, Snapchat, VSCO, Hinge, iMessage, LINE, KakaoTalk, Viber | no | — | — | — |
 | Slack (workspace owner) | yes | one CSV/text file: timestamp, channel, username, text | no | not yet |
 | Rocket.Chat (admin) | yes | a Slack export zip, or its own CSV zip | partly | not yet |
 | Zulip (admin) | yes | Slack, Mattermost or Rocket.Chat exports | yes | not yet |

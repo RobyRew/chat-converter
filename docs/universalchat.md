@@ -80,9 +80,25 @@ message or an attachment:
 |---|---|
 | `whatsapp` | `raw` (the message text exactly as written, marks included), `stamp`, `sender`, `lead`, `contentText`, `notice`, `attributedTo`; conversation: `headerStyle` (`ios`/`android`), `eol` — what makes a WhatsApp → WhatsApp conversion byte-identical |
 | `universalchat` | `originalRef` (an attachment's path in the original export when it is read back from a package); `original_<field>` (a value from a newer version this reader did not know) |
-| others | added by importers as needed (`telegram`, `instagram`, `messenger`, `snapchat`, …) |
+| `instagram`, `messenger` | message: `share {url, label, notes}`, `generated` (Meta's "X sent an attachment." line); conversation: `thread`, `folder` |
+| `snapchat` | message: `mediaType` (TEXT, MEDIA, NOTE, …), `saved`; conversation: `key` |
+| `vsco` | message: `journal {title, permalink, domain, url}`; conversation: `conversationId` |
+| `hinge` | message: `like`, `record`; conversation: `record` or `likesSent` |
+| others | added by importers as needed |
 
-`meta` holds cross-platform notes (`exportFormat`, `deletedAccount`, `htmlTimeInferred`, `editedTimeUnknown`).
+`meta` holds cross-platform notes:
+
+| Key | On | Meaning |
+|---|---|---|
+| `exportFormat` | conversation | the input variant: `json`, `html`, `dyi-html`, `dyi-json`, `snapchat-json`, `snapchat-html`, `vsco-json`, `hinge-json`, … |
+| `folder` | conversation | the export folder a thread came from (`inbox`, `message_requests`, `archived_threads`, …) |
+| `wallClockZone` | conversation | the IANA zone wall-clock times were read in |
+| `snaps`, `likesOnly`, `onlyOwnMessages` | conversation | Snapchat snap count; Hinge's "Likes sent" list; an export holding only the owner's side |
+| `deletedAccount`, `nameNotExported` | participant | Telegram's nameless deleted account; Hinge's unnamed match |
+| `contentUnavailable` | message | the export has the message but nothing in it |
+| `timeInferred`, `htmlTimeInferred` | message | no time in the export; the previous message's time is used |
+| `snap` | message | a Snapchat snap (its media is never exported) |
+| `editedTimeUnknown` | message | edited, but the export gives no edit time |
 
 ## Versioning
 

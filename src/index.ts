@@ -54,3 +54,7 @@ export { markdownExporter } from './exporters/markdown';
 export { jsonExporter } from './exporters/json';
 export { universalchatExporter, universalchatZipExporter, writeUniversalChatPackage, packagePath } from './exporters/universalchat';
 export { universalchatImporter } from './importers/universalchat';
+export { summarizeConversation, summarizeArchive, searchConversations, previewText, foldForSearch } from './engine/summary';
+export type { ConversationSummary, ArchiveSummary, SearchHit } from './engine/summary';
+export { writeBatch, batchFileName } from './engine/batch';
+export type { BatchItem, BatchRequest, BatchResult, BatchFile } from './engine/batch';

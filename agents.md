@@ -191,3 +191,33 @@ directly and is open to revision before ChatForge adopts it.)
 **Rationale:** one shape for single chats and whole accounts, lossless by construction, and evolvable without
 coordinated upgrades of every reader.
 **Status:** Accepted. Spec: `docs/universalchat.md`.
+
+## ADR-0007 — Account-wide exports: five importers, an inbox, batch conversion (2026-11-07) · Accepted
+**Context:** The owner's Instagram, Facebook, Snapchat, VSCO and Hinge downloads each hold many conversations
+(Instagram: 92 threads, 31,251 messages), in layouts no importer read. A one-conversation UI cannot navigate them,
+and converting them one by one is impractical. Their files reference media by the path from the download's own
+root, which broke when a common top folder was stripped from every path.
+**Decision:**
+- Importers implement `parseArchive` and return every conversation: `meta.ts` (Instagram + Messenger, HTML slots
+  and JSON), `snapchat.ts` (chat + snap history, Media IDs, friends/account names, HTML fallback), `vsco.ts`,
+  `hinge.ts`. Structure was measured on the owner's downloads (counts only; no content in the repo) and is
+  documented in `docs/formats/`. Text and links keep entities; Meta's generated "sent an attachment" line moves to
+  `ext`; messages the export left empty or undated are kept and flagged (`contentUnavailable`, `timeInferred`).
+- Wall-clock times (Meta HTML) use the chosen IANA zone; `WallClockSequence` picks, inside a repeated DST hour, the
+  instant that keeps the order. Facebook's footer offset is checked against the zone and a mismatch is reported.
+- `Source.root` records the folders stripped from every path; importers match their layout on the full path, and
+  media references fall back to their longest existing tail when only part of a download was dropped.
+- The worker keeps the whole archive per import and answers with `ConversationSummary` rows; new requests `open`,
+  `search` (accent-insensitive, every message) and `batch`. `writeBatch` writes one UniversalChat document/package
+  for all selected conversations, or a zip holding one package per conversation streamed into its entry
+  (`ZipSink.addStream`), or one text file per conversation.
+- The element opens multi-conversation exports on an inbox (search names or messages, sort, filter by folder/kind/
+  media, multi-select, batch convert); per-conversation edits are kept while navigating. The CLI gains `--chat`
+  and `--all`, and `inspect` lists conversations.
+- `guessSelf` uses `conversation.selfId` when an importer set it.
+**Rationale:** UniversalChat already holds many conversations (ADR-0006); keeping the archive in the worker keeps
+the page light (it holds one conversation at a time) and lets batch output stream media without the page touching
+the bytes. A zip of per-chat packages keeps each Telegram import file intact.
+**Unverifiable from the exports:** the zone Meta's HTML times are written in (Facebook's footer gives one offset,
+Instagram's none), the zone of Hinge's timestamps (read as UTC), and why Meta exports some messages empty.
+**Status:** Accepted.

@@ -6,13 +6,16 @@ import { basename, dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
   applyEdits,
+  batchFileName,
   exportConversation,
   FORMAT_META,
-  importConversation,
+  importArchive,
   IMPORT_TARGETS,
   listExports,
   packageFormatIds,
   splitConversation,
+  summarizeConversation,
+  writeBatch,
   writePackage,
   type Conversation,
   type Edits,
@@ -25,7 +28,8 @@ import { writeFile } from 'node:fs/promises';
 const USAGE = `chat-converter <command> [options]
 
 Commands:
-  inspect <path>              What an export holds (folder, .zip, result.json, messages.html, _chat.txt)
+  inspect <path>              What an export holds, and every conversation in it (folder, .zip, result.json,
+                              messages.html, _chat.txt, an Instagram/Facebook/Snapchat/VSCO/Hinge download)
   convert <path> --target <format> [options]
   targets                     Where converted chats can be imported, and how
 
@@ -42,6 +46,9 @@ Convert options:
   --animated-stickers omit|file
   --split <n>                 Write parts of at most n messages
   --export <n>                Which export to use when the input holds several (0-based)
+  --chat <n|title>            Which conversation of a multi-chat export (number from inspect, or its title;
+                              repeatable: several make one download)
+  --all                       Every conversation of the export, in one download
 `;
 
 function fail(message: string): never {
@@ -55,10 +62,37 @@ function participantByName(conv: Conversation, name: string): string {
   return p.id;
 }
 
+function day(ts: number | undefined): string {
+  return ts ? new Date(ts).toISOString().slice(0, 10) : '—';
+}
+
 async function inspect(path: string, tz?: string): Promise<void> {
   const exportsFound = await listExports(await sourceFromPath(path));
   for (const [i, source] of exportsFound.entries()) {
-    const { conversation: c, detectedPlatform, warnings } = await importConversation(source, tz ? { timeZone: tz } : {});
+    const { archive, detectedPlatform, warnings } = await importArchive(source, tz ? { timeZone: tz } : {});
+    if (archive.conversations.length > 1) {
+      const rows = archive.conversations.map((c, n) => summarizeConversation(c, n));
+      const total = rows.reduce((n, r) => n + r.messageCount, 0);
+      process.stdout.write(
+        [
+          `[${i}] ${source.name}`,
+          `  platform: ${detectedPlatform} (${archive.source?.variant ?? ''})  conversations: ${rows.length}  messages: ${total}`,
+          ...rows.map(
+            (r) =>
+              `  #${String(r.index).padEnd(4)} ${r.title.slice(0, 40).padEnd(40)} ${String(r.messageCount).padStart(7)} msg  ${day(r.firstTs)} → ${day(r.lastTs)}` +
+              `${r.media.total ? `  media ${r.media.present}/${r.media.total}` : ''}${r.folder ? `  [${r.folder}]` : ''}${r.flags.length ? `  ${r.flags.join(',')}` : ''}`,
+          ),
+          ...warnings.map((w) => `  warning: ${w}`),
+          '',
+        ].join('\n'),
+      );
+      continue;
+    }
+    const c = archive.conversations[0];
+    if (!c) {
+      process.stdout.write(`[${i}] ${source.name}\n  no conversation\n\n`);
+      continue;
+    }
     const att = c.messages.flatMap((m) => m.attachments ?? []);
     const omitted: Record<string, number> = {};
     for (const a of att) if (a.omitted) omitted[a.omitted] = (omitted[a.omitted] ?? 0) + 1;
@@ -81,6 +115,18 @@ async function inspect(path: string, tz?: string): Promise<void> {
   }
 }
 
+/** `--chat` values → conversation indexes: a number from `inspect`, or a title (exact, then unique prefix). */
+function pickChats(conversations: Conversation[], picks: string[]): number[] {
+  return picks.map((pick) => {
+    if (/^\d+$/.test(pick) && conversations[Number(pick)]) return Number(pick);
+    const exact = conversations.findIndex((c) => c.title === pick);
+    if (exact >= 0) return exact;
+    const prefixed = conversations.flatMap((c, i) => (c.title?.toLowerCase().startsWith(pick.toLowerCase()) ? [i] : []));
+    if (prefixed.length === 1) return prefixed[0]!;
+    return fail(prefixed.length ? `"${pick}" matches ${prefixed.length} conversations; use its number from inspect` : `No conversation "${pick}"; run inspect to list them`);
+  });
+}
+
 async function convert(path: string, values: Record<string, unknown>): Promise<void> {
   const target = values['target'] as ExportFormatId | undefined;
   if (!target || !(target in FORMAT_META)) fail(`--target must be one of: ${Object.keys(FORMAT_META).join(', ')}`);
@@ -88,9 +134,39 @@ async function convert(path: string, values: Record<string, unknown>): Promise<v
   const exportsFound = await listExports(await sourceFromPath(path));
   const source = exportsFound[Number(values['export'] ?? 0)];
   if (!source) fail(`No export #${String(values['export'])} in ${path}`);
-  const imported = await importConversation(source, tz ? { timeZone: tz } : {});
+  const imported = await importArchive(source, tz ? { timeZone: tz } : {});
   for (const w of imported.warnings) process.stderr.write(`warning: ${w}\n`);
-  let conv = imported.conversation;
+  const all = imported.archive.conversations;
+  const chats = values['all'] ? all.map((_, i) => i) : pickChats(all, (values['chat'] as string[] | undefined) ?? []);
+  if (!chats.length && all.length > 1) fail(`This export holds ${all.length} conversations: choose with --chat <n|title> (repeatable) or --all; inspect lists them.`);
+
+  if (chats.length > 1) {
+    // One download for several conversations: renames/self/title apply per conversation where the name exists.
+    const items = chats.map((i) => {
+      const c = all[i]!;
+      const whatsapp: WhatsAppPackageOptions = {};
+      if (values['mode']) whatsapp.mode = values['mode'] as 'dm' | 'group';
+      if (tz) whatsapp.timeZone = tz;
+      if (values['no-service-text']) whatsapp.serviceAsText = false;
+      const self = values['self'] ? c.participants.find((p) => p.displayName === values['self']) : undefined;
+      if (self) whatsapp.selfId = self.id;
+      const renames: Record<string, string> = {};
+      for (const r of (values['rename'] as string[] | undefined) ?? []) {
+        const at = r.indexOf('=');
+        const p = at > 0 ? c.participants.find((x) => x.displayName === r.slice(0, at)) : undefined;
+        if (p) renames[p.id] = r.slice(at + 1);
+      }
+      return { conversation: Object.keys(renames).length ? applyEdits(c, { renames }) : c, exportOptions: { whatsapp } };
+    });
+    const out = (values['out'] as string | undefined) ?? join(dirname(path), batchFileName(target, imported.archive.source?.name ?? source.name, items.length));
+    const r = await writeBatch(items, { target, source, destination: fileWritable(out), name: source.name, ...(imported.archive.source ? { archiveSource: imported.archive.source } : {}) });
+    for (const w of r.warnings) process.stderr.write(`warning: ${w}\n`);
+    process.stdout.write(`${basename(out)}: ${r.conversations} conversations, ${r.messagesOut}/${r.messagesIn} messages, ${r.mediaWritten} media files, ${(r.archiveBytes / 1048576).toFixed(1)} MiB\n`);
+    for (const f of r.files) process.stdout.write(`  ${f.name}: ${f.messagesOut} messages\n`);
+    return;
+  }
+  let conv = all[chats[0] ?? 0];
+  if (!conv) fail('The export holds no conversation');
 
   const edits: Edits = {};
   const renames: Record<string, string> = {};
@@ -167,6 +243,8 @@ async function main(): Promise<void> {
       'animated-stickers': { type: 'string' },
       split: { type: 'string' },
       export: { type: 'string' },
+      chat: { type: 'string', multiple: true },
+      all: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
   });

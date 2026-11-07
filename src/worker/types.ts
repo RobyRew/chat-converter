@@ -1,14 +1,18 @@
 import type { Conversation, ExportFormatId, FidelityReport, PlatformId } from '../model';
 import type { ExportArtifact, ExportOptions, InputFile, PackageSummary } from '../engine/contracts';
 import type { Edits } from '../engine/transforms';
+import type { ArchiveSummary, ConversationSummary, SearchHit } from '../engine/summary';
+import type { BatchFile } from '../engine/batch';
 
 /**
  * Worker message contract — pure types only (no `WebWorker`-lib globals), so DOM apps can import
  * these without a lib conflict.
  *
- * Flow: `import` (files → canonical model; the worker keeps the file handles under the request id) →
- * edits on the main thread → `export` (in-memory text formats) or `package` (a zip with media streamed
- * to a file the user picked, or to OPFS when the browser has no save picker).
+ * Flow: `import` (files → a UniversalChat archive of one or many conversations; the worker keeps the archive
+ * and the file handles under the request id, and answers with one summary per conversation) → `open` a
+ * conversation → edits on the main thread → `export` (in-memory text formats), `package` (a zip with media
+ * streamed to a file the user picked, or to OPFS when the browser has no save picker) or `batch` (several
+ * conversations into one download). `search` looks through every message of the archive.
  */
 
 /** What the user gave us: one in-memory file (a zip opens as an archive) or dropped files/folders. */
@@ -34,11 +38,29 @@ export interface ImportRequest {
   exportIndex?: number;
 }
 
+export interface OpenRequestMsg {
+  id: string;
+  action: 'open';
+  importId: string;
+  /** Index into the import's `conversations`. */
+  index: number;
+}
+
+export interface SearchRequestMsg {
+  id: string;
+  action: 'search';
+  importId: string;
+  query: string;
+  limit?: number;
+}
+
 export interface ExportRequestMsg {
   id: string;
   action: 'export';
   /** The conversation to export; omit it to use the one the worker kept for `importId`. */
   conversation?: Conversation;
+  /** Which of the import's conversations; default: the one last opened. */
+  conversationIndex?: number;
   /** Id of the `import` request: its files supply media and, without `conversation`, its conversation. */
   importId?: string;
   /** Edits applied to the kept conversation before export (renames, title, date range…). */
@@ -67,9 +89,21 @@ export interface PackageRequestMsg {
   importId: string;
   /** The conversation to write; omit it to use the one the worker kept for `importId`. */
   conversation?: Conversation;
+  /** Which of the import's conversations; default: the one last opened. */
+  conversationIndex?: number;
   edits?: Edits;
   target: ExportFormatId;
   exportOptions?: ExportOptions;
+  destination: PackageDestination;
+}
+
+export interface BatchRequestMsg {
+  id: string;
+  action: 'batch';
+  importId: string;
+  /** The conversations to convert, each with its own edits and options. */
+  items: Array<{ index: number; edits?: Edits; exportOptions?: ExportOptions }>;
+  target: ExportFormatId;
   destination: PackageDestination;
 }
 
@@ -87,7 +121,15 @@ export interface ReleaseRequestMsg {
   importId: string;
 }
 
-export type WorkerRequest = ImportRequest | ExportRequestMsg | PackageRequestMsg | CancelRequestMsg | ReleaseRequestMsg;
+export type WorkerRequest =
+  | ImportRequest
+  | OpenRequestMsg
+  | SearchRequestMsg
+  | ExportRequestMsg
+  | PackageRequestMsg
+  | BatchRequestMsg
+  | CancelRequestMsg
+  | ReleaseRequestMsg;
 
 export interface ConversationMeta {
   title?: string;
@@ -109,6 +151,28 @@ export type WorkerResponse =
       exports: string[];
       /** Name of the export that was imported. */
       sourceName: string;
+      /** The whole export: one summary per conversation, in archive order (latest activity first for account exports). */
+      archive: ArchiveSummary;
+      conversations: ConversationSummary[];
+      /** Index of `conversation` in `conversations`. */
+      index: number;
+    }
+  | { id: string; ok: true; action: 'open'; index: number; conversation: Conversation; meta: ConversationMeta }
+  | { id: string; ok: true; action: 'search'; hits: SearchHit[]; total: number }
+  | {
+      id: string;
+      ok: true;
+      action: 'batch';
+      suggestedName: string;
+      layout: 'universalchat' | 'zip-of-files';
+      conversations: number;
+      messagesIn: number;
+      messagesOut: number;
+      mediaWritten: number;
+      files: BatchFile[];
+      warnings: string[];
+      archiveBytes: number;
+      opfsName?: string;
     }
   | {
       id: string;

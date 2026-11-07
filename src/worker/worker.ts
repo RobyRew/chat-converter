@@ -1,10 +1,13 @@
 /// <reference lib="webworker" />
 import { ConversionError } from '../engine/contracts';
-import { exportConversation, importConversation, listExports, writePackage } from '../engine/pipeline';
+import { writeBatch } from '../engine/batch';
+import { exportConversation, importArchive, listExports, writePackage } from '../engine/pipeline';
+import { searchConversations, summarizeArchive, summarizeConversation } from '../engine/summary';
 import { applyEdits, type Edits } from '../engine/transforms';
-import type { Conversation } from '../model';
+import type { Conversation, UniversalChat } from '../model';
 import { sourceFromBlobs, sourceFromInputFile, type Source } from '../sources/index';
 import type {
+  BatchRequestMsg,
   ConversationMeta,
   ImportRequest,
   PackageDestination,
@@ -14,20 +17,39 @@ import type {
 } from './types';
 
 /**
- * Web Worker entry. Runs the engine off the main thread. Imports keep their file handles here (keyed by
- * the import request id) so a later `package` request can stream the media without the page ever
+ * Web Worker entry. Runs the engine off the main thread. An import keeps its archive (every conversation
+ * of the export) and its file handles here, keyed by the import request id, so the page holds only the
+ * conversation it shows and a later `package`/`batch` request can stream the media without the page ever
  * holding the bytes.
  */
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 const sources = new Map<string, Source>();
-const conversations = new Map<string, Conversation>();
+const archives = new Map<string, UniversalChat>();
+/** The conversation each import last opened. */
+const opened = new Map<string, number>();
+const running = new Map<string, AbortController>();
 
-function resolveConversation(req: { conversation?: Conversation; importId?: string; edits?: Edits }): Conversation {
-  const base = req.conversation ?? (req.importId ? conversations.get(req.importId) : undefined);
+function conversationAt(importId: string | undefined, index: number | undefined): Conversation | undefined {
+  if (!importId) return undefined;
+  const archive = archives.get(importId);
+  return archive?.conversations[index ?? opened.get(importId) ?? 0];
+}
+
+function resolveConversation(req: { conversation?: Conversation; importId?: string; conversationIndex?: number; edits?: Edits }): Conversation {
+  const base = req.conversation ?? conversationAt(req.importId, req.conversationIndex);
   if (!base) throw new ConversionError('The imported conversation is no longer available; import it again', 'NO_SOURCE');
   return req.edits ? applyEdits(base, req.edits) : base;
 }
-const running = new Map<string, AbortController>();
+
+function metaOf(conversation: Conversation): ConversationMeta {
+  const meta: ConversationMeta = {
+    kind: conversation.kind,
+    messageCount: conversation.messages.length,
+    participantCount: conversation.participants.length,
+  };
+  if (conversation.title) meta.title = conversation.title;
+  return meta;
+}
 
 function post(msg: WorkerResponse): void {
   ctx.postMessage(msg);
@@ -71,9 +93,14 @@ async function destinationStream(dest: PackageDestination): Promise<{ writable: 
   return { writable, opfsName: dest.name };
 }
 
-async function runPackage(req: PackageRequestMsg): Promise<void> {
-  const source = sources.get(req.importId);
+function sourceOf(importId: string): Source {
+  const source = sources.get(importId);
   if (!source) throw new ConversionError('The imported files are no longer available; import them again', 'NO_SOURCE');
+  return source;
+}
+
+async function runPackage(req: PackageRequestMsg): Promise<void> {
+  const source = sourceOf(req.importId);
   const abort = new AbortController();
   running.set(req.id, abort);
   try {
@@ -101,38 +128,80 @@ async function runPackage(req: PackageRequestMsg): Promise<void> {
   }
 }
 
+async function runBatch(req: BatchRequestMsg): Promise<void> {
+  const source = sourceOf(req.importId);
+  const archive = archives.get(req.importId);
+  if (!archive) throw new ConversionError('The imported conversations are no longer available; import them again', 'NO_SOURCE');
+  const items = req.items.map((it) => {
+    const base = archive.conversations[it.index];
+    if (!base) throw new ConversionError(`No conversation #${it.index} in this import`, 'NO_SOURCE');
+    return { conversation: it.edits ? applyEdits(base, it.edits) : base, ...(it.exportOptions ? { exportOptions: it.exportOptions } : {}) };
+  });
+  const abort = new AbortController();
+  running.set(req.id, abort);
+  try {
+    const { writable, opfsName } = await destinationStream(req.destination);
+    const r = await writeBatch(items, {
+      target: req.target,
+      source,
+      destination: writable,
+      name: archive.source?.name ?? source.name,
+      ...(archive.source ? { archiveSource: archive.source } : {}),
+      signal: abort.signal,
+      onProgress: (p) => post({ id: req.id, ok: true, action: 'progress', entries: p.entries, bytes: p.bytes }),
+    });
+    post({ id: req.id, ok: true, action: 'batch', ...r, ...(opfsName ? { opfsName } : {}) });
+  } finally {
+    running.delete(req.id);
+  }
+}
+
 ctx.onmessage = async (ev: MessageEvent<WorkerRequest>): Promise<void> => {
   const req = ev.data;
   try {
     switch (req.action) {
       case 'import': {
-        const opened = await openRequestInput(req);
-        const found = await listExports(opened);
-        const index = Math.min(req.exportIndex ?? 0, Math.max(0, found.length - 1));
-        const source = found[index] ?? opened;
-        const { conversation, detectedPlatform, warnings } = await importConversation(source, {
+        const input = await openRequestInput(req);
+        const found = await listExports(input);
+        const exportIndex = Math.min(req.exportIndex ?? 0, Math.max(0, found.length - 1));
+        const source = found[exportIndex] ?? input;
+        const { archive, detectedPlatform, warnings } = await importArchive(source, {
           ...(req.source ? { source: req.source } : {}),
           ...(req.timeZone ? { timeZone: req.timeZone } : {}),
         });
+        const first = archive.conversations[0];
+        if (!first) throw new ConversionError('The export holds no conversation', 'EMPTY_EXPORT');
         sources.set(req.id, source);
-        conversations.set(req.id, conversation);
-        const meta: ConversationMeta = {
-          kind: conversation.kind,
-          messageCount: conversation.messages.length,
-          participantCount: conversation.participants.length,
-        };
-        if (conversation.title) meta.title = conversation.title;
+        archives.set(req.id, archive);
+        opened.set(req.id, 0);
+        const conversations = archive.conversations.map((c, i) => summarizeConversation(c, i));
         post({
           id: req.id,
           ok: true,
           action: 'import',
-          conversation,
+          conversation: first,
           detectedPlatform,
           warnings,
-          meta,
+          meta: metaOf(first),
           exports: found.map((s) => s.name),
           sourceName: source.name,
+          archive: summarizeArchive(conversations, archive.source),
+          conversations,
+          index: 0,
         });
+        break;
+      }
+      case 'open': {
+        const conversation = conversationAt(req.importId, req.index);
+        if (!conversation) throw new ConversionError(`No conversation #${req.index} in this import`, 'NO_SOURCE');
+        opened.set(req.importId, req.index);
+        post({ id: req.id, ok: true, action: 'open', index: req.index, conversation, meta: metaOf(conversation) });
+        break;
+      }
+      case 'search': {
+        const archive = archives.get(req.importId);
+        const { hits, total } = archive ? searchConversations(archive.conversations, req.query, req.limit) : { hits: [], total: 0 };
+        post({ id: req.id, ok: true, action: 'search', hits, total });
         break;
       }
       case 'export': {
@@ -148,13 +217,17 @@ ctx.onmessage = async (ev: MessageEvent<WorkerRequest>): Promise<void> => {
       case 'package':
         await runPackage(req);
         break;
+      case 'batch':
+        await runBatch(req);
+        break;
       case 'cancel':
         running.get(req.requestId)?.abort(new DOMException('Cancelled', 'AbortError'));
         post({ id: req.id, ok: true, action: 'cancel' });
         break;
       case 'release':
         sources.delete(req.importId);
-        conversations.delete(req.importId);
+        archives.delete(req.importId);
+        opened.delete(req.importId);
         post({ id: req.id, ok: true, action: 'release' });
         break;
     }

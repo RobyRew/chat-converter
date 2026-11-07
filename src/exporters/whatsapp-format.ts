@@ -147,6 +147,8 @@ const OMITTED_LABEL: Record<Attachment['kind'], string> = {
 /** Telegram writes the deleted peer as "Deleted Account"; a DM's other side is the chat title. */
 export function guessSelf(conv: Conversation): string | undefined {
   const people = conv.participants;
+  // Account-wide exports (Instagram, Snapchat, VSCO, Hinge…) name the owner.
+  if (conv.selfId && people.some((p) => p.id === conv.selfId)) return conv.selfId;
   if (people.length !== 2) return undefined;
   const [a, b] = people as [Participant, Participant];
   if (a.meta?.['deletedAccount']) return b.id;

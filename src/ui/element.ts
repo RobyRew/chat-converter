@@ -1,7 +1,10 @@
 import type { BlobEntry } from '../sources/blob';
-import type { Conversation, ExportFormatId, FidelityReport, Message, Participant } from '../model';
-import { FORMAT_META, packageFormatIds } from '../model';
-import type { PackageSummary, WhatsAppPackageOptions } from '../engine/contracts';
+import type { Conversation, ExportFormatId, FidelityReport, Message, Participant, PlatformId } from '../model';
+import { FORMAT_META, PLATFORM_META, packageFormatIds } from '../model';
+import type { ExportOptions, PackageSummary, WhatsAppPackageOptions } from '../engine/contracts';
+import type { BatchFile } from '../engine/batch';
+import { batchFileName } from '../engine/batch-name';
+import type { ArchiveSummary, ConversationSummary, SearchHit } from '../engine/summary';
 import { applyEdits, dateBounds, orderMessages, participantMessageCounts, type Edits, type MessageOrder } from '../engine/transforms';
 import { segmentRichText } from '../engine/richtext';
 import { defaultTimeZone, zonedTimeToUtc } from '../engine/time';
@@ -12,6 +15,7 @@ import { ConverterClient, defaultWorker } from './client';
 import { debounce, h, replace } from './dom';
 import { dateInput, formatBytes, formatCount, formatDateTime, formatDay, hue } from './format';
 import { VirtualList } from './virtual-list';
+import { filterRows, folderCounts, folderLabel, INBOX_DEFAULTS, renderHit, renderRow, type InboxState } from './inbox';
 
 type Phase = 'empty' | 'reading' | 'ready' | 'converting' | 'done' | 'error';
 
@@ -22,6 +26,37 @@ interface Result {
   summary?: PackageSummary;
   archiveBytes?: number;
   opfsName?: string;
+}
+
+interface BatchOutcome {
+  fileName: string;
+  layout: 'universalchat' | 'zip-of-files';
+  conversations: number;
+  messagesIn: number;
+  messagesOut: number;
+  mediaWritten: number;
+  files: BatchFile[];
+  warnings: string[];
+  archiveBytes: number;
+  opfsName?: string;
+}
+
+/** What the user set on one conversation of an archive, kept while they move between conversations. */
+interface ChatState {
+  edits: Edits;
+  selfId: string | undefined;
+  mode: 'dm' | 'group';
+}
+
+/** "dyi-html" → "HTML", "snapchat-json" → "JSON", "html" → "HTML". */
+function variantLabel(format: string): string {
+  const tail = format.split('-').pop() ?? format;
+  return tail.toUpperCase();
+}
+
+function platformLabel(id: string): string {
+  if (id === 'telegram') return 'Telegram Desktop';
+  return PLATFORM_META[id as PlatformId]?.label ?? id;
 }
 
 /** Target groups, in the order they are offered. Formats the engine does not have are skipped. */
@@ -61,7 +96,9 @@ function supportedZones(): string[] {
 }
 
 /**
- * `<chat-converter-app>`: drop an export, edit the details, preview it, convert it.
+ * `<chat-converter-app>`: drop an export, edit the details, preview it, convert it. An export holding many
+ * conversations (Instagram, Messenger, Snapchat…) opens on an inbox: search, filter, open one, or select
+ * several and convert them together.
  *
  * Host hooks (ChatForge uses them for "Save to Vault"):
  * - children with `slot="actions"` are moved into the convert panel;
@@ -97,6 +134,25 @@ export class ChatConverterElement extends HTMLElement {
   private tab: 'chat' | 'output' | 'report' = 'chat';
   private list?: VirtualList;
   private shown: Message[] = [];
+  // Archive (every conversation of the export) and the inbox.
+  private archive?: ArchiveSummary;
+  private rows: ConversationSummary[] = [];
+  private view: 'inbox' | 'chat' = 'chat';
+  private current = 0;
+  private perChat = new Map<number, ChatState>();
+  private selected = new Set<number>();
+  private inbox: InboxState = { ...INBOX_DEFAULTS };
+  private filtered: ConversationSummary[] = [];
+  private inboxList?: VirtualList;
+  private hits: SearchHit[] = [];
+  private hitsTotal = 0;
+  private searching = false;
+  private batchTarget: ExportFormatId = 'universalchat-zip';
+  private batchResult?: BatchOutcome;
+  private batchRunning = false;
+  private batchError = '';
+  private hitsList?: VirtualList;
+  private jumpId?: string;
   private names = new Map<string, Participant>();
   private root!: HTMLDivElement;
   private actions: Node[] = [];
@@ -161,24 +217,83 @@ export class ChatConverterElement extends HTMLElement {
       );
       if (!res.ok || res.action !== 'import') return;
       this.importId = id;
-      this.imported = res.conversation;
       this.detected = res.detectedPlatform;
-      this.warnings = [...res.warnings, ...this.exportWarnings(res.conversation)];
+      this.archiveWarnings = res.warnings;
       this.exportsFound = res.exports;
       this.sourceName = res.sourceName;
-      this.edits = {};
-      this.selfId = guessSelf(res.conversation);
-      this.mode = res.conversation.kind === 'dm' ? 'dm' : 'group';
+      this.archive = res.archive;
+      this.rows = res.conversations;
+      this.perChat.clear();
+      this.selected.clear();
+      this.hits = [];
+      this.hitsTotal = 0;
+      this.batchResult = undefined;
+      this.inboxList = undefined;
+      this.setConversation(res.index, res.conversation);
       const tz = res.conversation.meta?.['timeZone'];
       if (typeof tz === 'string') this.timeZone = tz;
+      this.view = this.rows.length > 1 ? 'inbox' : 'chat';
       this.phase = 'ready';
       this.render();
-      this.emit('cc-imported', { title: res.conversation.title, messages: res.conversation.messages.length, platform: res.detectedPlatform });
+      this.emit('cc-imported', {
+        title: res.conversation.title,
+        messages: res.archive.messages,
+        conversations: res.archive.conversations,
+        platform: res.detectedPlatform,
+      });
     } catch (e) {
       this.phase = 'error';
       this.error = e instanceof Error ? e.message : String(e);
       this.render();
     }
+  }
+
+  private archiveWarnings: string[] = [];
+
+  /** Shows conversation `index`, restoring what the user set on it earlier. */
+  private setConversation(index: number, conversation: Conversation): void {
+    this.current = index;
+    this.imported = conversation;
+    const saved = this.perChat.get(index);
+    this.edits = saved?.edits ?? {};
+    this.selfId = saved ? saved.selfId : guessSelf(conversation);
+    this.mode = saved?.mode ?? (conversation.kind === 'dm' ? 'dm' : 'group');
+    this.warnings = [...(this.rows.length > 1 ? [] : this.archiveWarnings), ...this.exportWarnings(conversation)];
+    this.result = undefined;
+    this.list = undefined;
+  }
+
+  private saveCurrent(): void {
+    if (!this.imported) return;
+    this.perChat.set(this.current, { edits: this.edits, selfId: this.selfId, mode: this.mode });
+  }
+
+  private async openConversation(index: number, jumpTo?: string): Promise<void> {
+    if (!this.importId) return;
+    this.saveCurrent();
+    try {
+      const res = await this.worker().call({ action: 'open', importId: this.importId, index });
+      if (!res.ok || res.action !== 'open') return;
+      this.setConversation(index, res.conversation);
+      this.view = 'chat';
+      this.tab = 'chat';
+      this.phase = 'ready';
+      if (jumpTo) this.jumpId = jumpTo;
+      this.render();
+      this.emit('cc-opened', { index, title: res.conversation.title, messages: res.conversation.messages.length });
+    } catch (e) {
+      this.phase = 'error';
+      this.error = e instanceof Error ? e.message : String(e);
+      this.render();
+    }
+  }
+
+  private backToInbox(): void {
+    this.saveCurrent();
+    this.view = 'inbox';
+    this.list = undefined;
+    if (this.phase === 'done' || this.phase === 'error') this.phase = 'ready';
+    this.render();
   }
 
   /** What the export left out, in words the user can act on. */
@@ -201,6 +316,12 @@ export class ChatConverterElement extends HTMLElement {
     if (c.meta?.['exportFormat'] === 'html') {
       out.push(`Read from the HTML pages: times are converted with the ${this.timeZone} zone, and edit marks are not in HTML exports. A JSON export carries both.`);
     }
+    if (c.meta?.['exportFormat'] === 'dyi-html') {
+      out.push(`Read from Meta's HTML pages: they show times to the minute and without a zone, so they are read in the ${this.timeZone} zone. Meta's JSON download has exact times.`);
+    }
+    if (c.meta?.['onlyOwnMessages']) out.push('This app exports only the messages you sent; the other side of the chat is not in the export.');
+    const unavailable2 = c.messages.filter((m) => m.meta?.['contentUnavailable']).length;
+    if (unavailable2) out.push(`${formatCount(unavailable2)} messages have no content in the export (the app left it out); they are kept, empty.`);
     return out;
   }
 
@@ -238,7 +359,7 @@ export class ChatConverterElement extends HTMLElement {
       this.phase = 'converting';
       this.render();
       try {
-        const res = await client.call({ action: 'export', importId: this.importId, edits: this.effectiveEdits(), target: this.target, exportOptions });
+        const res = await client.call({ action: 'export', importId: this.importId, conversationIndex: this.current, edits: this.effectiveEdits(), target: this.target, exportOptions });
         if (res.ok && res.action === 'export') {
           const file = res.artifact.files[0];
           if (file) {
@@ -281,6 +402,7 @@ export class ChatConverterElement extends HTMLElement {
         {
           action: 'package',
           importId: this.importId,
+          conversationIndex: this.current,
           edits: this.effectiveEdits(),
           target: this.target,
           exportOptions,
@@ -334,6 +456,15 @@ export class ChatConverterElement extends HTMLElement {
     this.result = undefined;
     this.edits = {};
     this.list = undefined;
+    this.archive = undefined;
+    this.rows = [];
+    this.perChat.clear();
+    this.selected.clear();
+    this.hits = [];
+    this.inbox = { ...INBOX_DEFAULTS };
+    this.inboxList = undefined;
+    this.batchResult = undefined;
+    this.view = 'chat';
     this.render();
   }
 
@@ -352,6 +483,12 @@ export class ChatConverterElement extends HTMLElement {
       replace(this.root, this.renderDrop());
       return;
     }
+    if (this.view === 'inbox') {
+      this.list = undefined;
+      this.renderInbox();
+      return;
+    }
+    this.inboxList = undefined;
     replace(
       this.root,
       h('section', { class: 'cc-work' },
@@ -375,7 +512,7 @@ export class ChatConverterElement extends HTMLElement {
       h('div', { class: 'cc-dropzone__icon', 'aria-hidden': 'true' }, '⇣'),
       h('h2', { class: 'cc-dropzone__title' }, this.phase === 'reading' ? 'Reading the export…' : 'Drop a chat export'),
       h('p', { class: 'cc-dropzone__text' },
-        'A Telegram Desktop export folder (HTML, JSON or both, with its media folders), a WhatsApp export (.zip or _chat.txt), or a UniversalChat package. Several exports at once are fine.'),
+        'A Telegram Desktop export folder (HTML, JSON or both), a WhatsApp export (.zip or _chat.txt), an Instagram, Facebook, Snapchat, VSCO or Hinge data download (.zip or folder), or a UniversalChat package. Several exports at once are fine.'),
       h('div', { class: 'cc-row cc-row--center' },
         h('button', { class: 'cc-btn cc-btn--primary', type: 'button', onclick: () => folder.click(), disabled: this.phase === 'reading' }, 'Choose a folder'),
         h('button', { class: 'cc-btn', type: 'button', onclick: () => files.click(), disabled: this.phase === 'reading' }, 'Choose files'),
@@ -419,17 +556,27 @@ export class ChatConverterElement extends HTMLElement {
     const chip = (text: string, tone = ''): HTMLElement => h('span', { class: `cc-chip ${tone}` }, text);
     replace(
       head,
+      this.rows.length > 1
+        ? h('div', { class: 'cc-head__line' },
+            h('div', { class: 'cc-row' },
+              h('button', { class: 'cc-btn', type: 'button', onclick: () => this.backToInbox() }, `← All ${formatCount(this.rows.length)} conversations`),
+              this.navButton(-1),
+              this.navButton(1),
+            ),
+            h('button', { class: 'cc-link', type: 'button', onclick: () => this.startOver() }, 'Start over'))
+        : null,
       h('div', { class: 'cc-head__line' },
         h('p', { class: 'cc-head__title' },
-          'Imported from ', h('strong', {}, this.detected === 'telegram' ? 'Telegram Desktop' : this.detected === 'whatsapp' ? 'WhatsApp' : this.detected),
-          format ? ` (${format.toUpperCase()})` : '',
+          this.rows.length > 1 ? h('strong', {}, conv.title ?? 'Conversation') : 'Imported from ',
+          this.rows.length > 1 ? ` · ${platformLabel(this.detected)}` : h('strong', {}, platformLabel(this.detected)),
+          format ? ` (${variantLabel(format)})` : '',
           ' · ', h('strong', {}, formatCount(conv.messages.length)), ' messages · ', formatCount(conv.participants.length), ' participants'),
-        h('button', { class: 'cc-link', type: 'button', onclick: () => this.startOver() }, '← Start over'),
+        this.rows.length > 1 ? null : h('button', { class: 'cc-link', type: 'button', onclick: () => this.startOver() }, '← Start over'),
       ),
       h('div', { class: 'cc-chips' },
         this.exportsFound.length > 1 ? this.renderExportPicker() : chip(this.sourceName || this.dropLabel),
         bounds ? chip(`${formatDay(bounds.min, this.timeZone)} → ${formatDay(bounds.max, this.timeZone)}`) : null,
-        chip(`${formatCount(present)} of ${formatCount(att.length)} media files in the export`, present === att.length ? 'is-ok' : 'is-warn'),
+        att.length ? chip(`${formatCount(present)} of ${formatCount(att.length)} media files in the export`, present === att.length ? 'is-ok' : 'is-warn') : null,
         included !== conv.messages.length ? chip(`${formatCount(included)} included`, 'is-accent') : null,
         chip(`Times: ${this.timeZone}`),
       ),
@@ -722,8 +869,9 @@ export class ChatConverterElement extends HTMLElement {
       const res = await this.worker().call({
         action: 'export',
         importId: this.importId,
+        conversationIndex: this.current,
         edits: this.effectiveEdits(),
-        target: isPackage(this.target) ? this.target : this.target,
+        target: this.target,
         exportOptions: { order: this.order, whatsapp: this.whatsappOptions() },
       });
       if (res.ok && res.action === 'export') {
@@ -773,6 +921,17 @@ export class ChatConverterElement extends HTMLElement {
     if (!vp) return;
     if (!this.list) this.list = new VirtualList(vp, this.shown.length, (i) => this.bubble(i));
     else this.list.reset(this.shown.length);
+    if (this.jumpId) {
+      const at = this.shown.findIndex((m) => m.id === this.jumpId);
+      if (at >= 0) requestAnimationFrame(() => this.list?.scrollToIndex(at));
+      const id = this.jumpId;
+      setTimeout(() => {
+        if (this.jumpId === id) {
+          this.jumpId = undefined;
+          this.list?.refresh();
+        }
+      }, 2600);
+    }
   }
 
   private bubble(i: number): HTMLElement {
@@ -788,20 +947,23 @@ export class ChatConverterElement extends HTMLElement {
       this.changed();
     });
     const time = h('span', { class: 'cc-bubble__time' }, formatDateTime(m, this.timeZone), m.editedAt ? ' · edited' : '');
+    const jump = m.id === this.jumpId ? ' is-jump' : '';
     if (m.kind === 'service' || m.kind === 'system' || m.kind === 'call') {
-      return h('div', { class: `cc-row-wrap cc-center${removed ? ' is-removed' : ''}` },
+      return h('div', { class: `cc-row-wrap cc-center${removed ? ' is-removed' : ''}${jump}` },
         h('div', { class: 'cc-event' }, this.richText(m), ' ', time, toggle));
     }
     const p = m.senderId ? this.names.get(m.senderId) : undefined;
     const name = p?.displayName ?? 'Unknown';
     const mine = !!this.selfId && m.senderId === this.selfId;
-    return h('div', { class: `cc-row-wrap ${mine ? 'cc-right' : 'cc-left'}${removed ? ' is-removed' : ''}` },
+    return h('div', { class: `cc-row-wrap ${mine ? 'cc-right' : 'cc-left'}${removed ? ' is-removed' : ''}${jump}` },
       h('div', { class: `cc-bubble${mine ? ' is-mine' : ''}` },
         h('div', { class: 'cc-bubble__who', style: `--who-hue:${hue(name)}` }, name, m.viaBot ? h('span', { class: 'cc-muted' }, ` via ${m.viaBot}`) : null),
         m.forwardedFrom ? h('div', { class: 'cc-bubble__meta' }, `↪ Forwarded from ${m.forwardedFrom.name ?? 'someone'}`) : null,
         m.replyToId ? h('div', { class: 'cc-bubble__meta' }, '↩ Reply') : null,
         this.mediaBlock(m),
         m.poll || m.checklist || m.location || m.contact ? null : h('div', { class: 'cc-bubble__text' }, this.richText(m)),
+        m.meta?.['contentUnavailable'] ? h('div', { class: 'cc-bubble__meta' }, 'Not in the export') : null,
+        m.meta?.['snap'] ? h('div', { class: 'cc-bubble__meta' }, 'Snap') : null,
         m.reactions?.length ? h('div', { class: 'cc-bubble__reactions' }, m.reactions.map((r) => `${r.emoji}${r.count && r.count > 1 ? ` ${r.count}` : ''}`).join('  ')) : null,
         time,
         toggle,
@@ -851,6 +1013,344 @@ export class ChatConverterElement extends HTMLElement {
       span.append(node);
     }
     return span;
+  }
+
+  // ---------------------------------------------------------------- inbox
+
+  /** Previous/next conversation in the inbox's current order. */
+  private navButton(step: -1 | 1): HTMLElement {
+    const order = this.filtered.length ? this.filtered : filterRows(this.rows, this.inbox);
+    const at = order.findIndex((r) => r.index === this.current);
+    const next = at >= 0 ? order[at + step] : undefined;
+    return h('button', {
+      class: 'cc-btn',
+      type: 'button',
+      disabled: !next,
+      title: next ? next.title : '',
+      'aria-label': step < 0 ? 'Previous conversation' : 'Next conversation',
+      onclick: () => next && void this.openConversation(next.index),
+    }, step < 0 ? '‹' : '›');
+  }
+
+  private renderInbox(): void {
+    const a = this.archive!;
+    const chip = (text: string, tone = ''): HTMLElement => h('span', { class: `cc-chip ${tone}` }, text);
+    const zone = h('select', { class: 'cc-field cc-field--inline', 'aria-label': 'Time zone' },
+      supportedZones().map((z) => h('option', { value: z, selected: z === this.timeZone }, z)));
+    zone.addEventListener('change', () => {
+      this.timeZone = zone.value;
+      void this.runImport();
+    });
+    replace(
+      this.root,
+      h('section', { class: 'cc-work' },
+        h('div', { class: 'cc-head' },
+          h('div', { class: 'cc-head__line' },
+            h('p', { class: 'cc-head__title' },
+              'Imported from ', h('strong', {}, platformLabel(this.detected)),
+              a.variant ? ` (${variantLabel(a.variant)})` : '',
+              ' · ', h('strong', {}, formatCount(a.conversations)), ' conversations · ', h('strong', {}, formatCount(a.messages)), ' messages'),
+            h('button', { class: 'cc-link', type: 'button', onclick: () => this.startOver() }, '← Start over'),
+          ),
+          h('div', { class: 'cc-chips' },
+            this.exportsFound.length > 1 ? this.renderExportPicker() : chip(this.sourceName || this.dropLabel),
+            a.firstTs && a.lastTs ? chip(`${formatDay(a.firstTs, this.timeZone)} → ${formatDay(a.lastTs, this.timeZone)}`) : null,
+            a.media.total ? chip(`${formatCount(a.media.present)} of ${formatCount(a.media.total)} media files in the export`, a.media.present === a.media.total ? 'is-ok' : 'is-warn') : null,
+            h('label', { class: 'cc-chip' }, 'Times: ', zone),
+          ),
+          this.archiveWarnings.length
+            ? h('details', { class: 'cc-warnings', open: true },
+                h('summary', {}, `${this.archiveWarnings.length} note${this.archiveWarnings.length > 1 ? 's' : ''} about this export`),
+                h('ul', {}, this.archiveWarnings.map((w) => h('li', {}, w))))
+            : null,
+        ),
+        h('div', { class: 'cc-grid cc-grid--inbox' },
+          h('main', { class: 'cc-card cc-inbox' }, this.renderInboxTools(), h('div', { class: 'cc-inbox__status', 'data-part': 'inbox-status' }), h('div', { class: 'cc-vl cc-vl--inbox', 'data-part': 'inbox-list', tabindex: 0, 'aria-label': 'Conversations' })),
+          h('aside', { class: 'cc-side', 'data-part': 'batch' }),
+        ),
+      ),
+    );
+    this.inboxList = undefined;
+    this.hitsList = undefined;
+    this.refreshInbox();
+    this.renderBatch();
+  }
+
+  private renderInboxTools(): HTMLElement {
+    const search = h('input', {
+      type: 'search',
+      class: 'cc-field',
+      value: this.inbox.query,
+      placeholder: this.inbox.scope === 'chats' ? `Search ${formatCount(this.rows.length)} conversations` : 'Search every message',
+      'aria-label': 'Search',
+    });
+    const runSearch = debounce(() => void this.searchMessages(), 250);
+    search.addEventListener('input', () => {
+      this.inbox.query = search.value;
+      if (this.inbox.scope === 'messages') runSearch();
+      else this.refreshInbox();
+    });
+    const scope = this.segmented([['chats', 'Names'], ['messages', 'Messages']], this.inbox.scope, (v) => {
+      this.inbox.scope = v as InboxState['scope'];
+      search.placeholder = v === 'chats' ? `Search ${formatCount(this.rows.length)} conversations` : 'Search every message';
+      if (v === 'messages') void this.searchMessages();
+      else this.refreshInbox();
+    }, 'Search in');
+
+    const sort = h('select', { class: 'cc-field cc-field--inline', 'aria-label': 'Sort' },
+      ([['recent', 'Latest activity'], ['oldest', 'Oldest first'], ['messages', 'Most messages'], ['name', 'Name A–Z']] as const)
+        .map(([v, label]) => h('option', { value: v, selected: this.inbox.sort === v }, label)));
+    sort.addEventListener('change', () => {
+      this.inbox.sort = sort.value as InboxState['sort'];
+      this.refreshInbox();
+    });
+
+    const folders = folderCounts(this.rows);
+    const folder = folders.length > 1
+      ? (() => {
+          const sel = h('select', { class: 'cc-field cc-field--inline', 'aria-label': 'Folder' },
+            h('option', { value: 'all', selected: this.inbox.folder === 'all' }, `All folders (${formatCount(this.rows.length)})`),
+            folders.map(([f, n]) => h('option', { value: f, selected: this.inbox.folder === f }, `${folderLabel(f)} (${formatCount(n)})`)));
+          sel.addEventListener('change', () => {
+            this.inbox.folder = sel.value;
+            this.refreshInbox();
+          });
+          return sel;
+        })()
+      : null;
+
+    const groups = this.rows.filter((r) => r.kind !== 'dm').length;
+    const kind = groups && groups < this.rows.length
+      ? this.segmented([['all', 'All'], ['dm', 'Private'], ['group', 'Groups']], this.inbox.kind, (v) => {
+          this.inbox.kind = v as InboxState['kind'];
+          this.refreshInbox();
+        }, 'Kind')
+      : null;
+
+    const media = this.rows.some((r) => r.media.total)
+      ? (() => {
+          const box = h('input', { type: 'checkbox', class: 'cc-switch', checked: this.inbox.withMedia });
+          box.addEventListener('change', () => {
+            this.inbox.withMedia = box.checked;
+            this.refreshInbox();
+          });
+          return h('label', { class: 'cc-toggle' }, box, 'With media');
+        })()
+      : null;
+
+    return h('div', { class: 'cc-inbox__tools' },
+      h('div', { class: 'cc-row cc-inbox__search' }, search, scope),
+      h('div', { class: 'cc-row' }, sort, folder, kind, media),
+    );
+  }
+
+  /** Re-filters the list (or shows search hits) without rebuilding the toolbar, so typing keeps focus. */
+  private refreshInbox(): void {
+    const status = this.root.querySelector<HTMLElement>('[data-part="inbox-status"]');
+    const vp = this.root.querySelector<HTMLElement>('[data-part="inbox-list"]');
+    if (!status || !vp) return;
+    const byIndex = new Map(this.rows.map((r) => [r.index, r]));
+
+    // Rows and search hits each get their own scroll element, so neither list's listeners pile up on the other's.
+    const fresh = (): HTMLElement => {
+      const next = h('div', { class: 'cc-vl cc-vl--inbox', 'data-part': 'inbox-list', tabindex: 0, 'aria-label': 'Conversations' });
+      vp.replaceWith(next);
+      return next;
+    };
+
+    if (this.inbox.scope === 'messages' && this.inbox.query.trim().length >= 2) {
+      this.inboxList = undefined;
+      const chats = new Set(this.hits.map((x) => x.index)).size;
+      replace(status, this.searching ? 'Searching…' : this.hitsTotal
+        ? `${formatCount(this.hitsTotal)} message${this.hitsTotal === 1 ? '' : 's'} in ${formatCount(chats)} conversation${chats === 1 ? '' : 's'}${this.hitsTotal > this.hits.length ? ` — showing the first ${formatCount(this.hits.length)}` : ''}`
+        : 'No message matches.');
+      const hit = (i: number): HTMLElement => renderHit(this.hits[i]!, byIndex.get(this.hits[i]!.index), this.timeZone, (index, messageId) => void this.openConversation(index, messageId));
+      if (!this.hitsList) this.hitsList = new VirtualList(fresh(), this.hits.length, hit, 72);
+      else this.hitsList.reset(this.hits.length);
+      return;
+    }
+    if (this.hitsList) {
+      this.hitsList = undefined;
+      this.inboxList = undefined;
+      fresh();
+    }
+
+    this.filtered = filterRows(this.rows, this.inbox);
+    const shownSelected = this.filtered.filter((r) => this.selected.has(r.index)).length;
+    const all = h('input', { type: 'checkbox', class: 'cc-check', checked: shownSelected > 0 && shownSelected === this.filtered.length, 'aria-label': 'Select every conversation shown' });
+    all.indeterminate = shownSelected > 0 && shownSelected < this.filtered.length;
+    all.addEventListener('change', () => {
+      for (const r of this.filtered) {
+        if (all.checked) this.selected.add(r.index);
+        else this.selected.delete(r.index);
+      }
+      this.refreshInbox();
+      this.renderBatch();
+    });
+    replace(status,
+      h('label', { class: 'cc-row' }, all, `${formatCount(this.filtered.length)} of ${formatCount(this.rows.length)} conversations`),
+      this.selected.size ? h('span', { class: 'cc-muted' }, `${formatCount(this.selected.size)} selected`) : null,
+    );
+    const row = (i: number): HTMLElement => {
+      const r = this.filtered[i]!;
+      return renderRow(r, {
+        selected: this.selected.has(r.index),
+        edited: Object.keys(this.perChat.get(r.index)?.edits ?? {}).length > 0,
+        current: r.index === this.current && !!this.perChat.get(r.index),
+        timeZone: this.timeZone,
+        onToggle: (index, on) => {
+          if (on) this.selected.add(index);
+          else this.selected.delete(index);
+          this.refreshInbox();
+          this.renderBatch();
+        },
+        onOpen: (index) => void this.openConversation(index),
+      });
+    };
+    const target = this.root.querySelector<HTMLElement>('[data-part="inbox-list"]')!;
+    if (!this.inboxList) this.inboxList = new VirtualList(target, this.filtered.length, row, 68);
+    else this.inboxList.reset(this.filtered.length);
+  }
+
+  private async searchMessages(): Promise<void> {
+    const query = this.inbox.query.trim();
+    if (query.length < 2) {
+      this.hits = [];
+      this.hitsTotal = 0;
+      this.refreshInbox();
+      return;
+    }
+    this.searching = true;
+    this.refreshInbox();
+    try {
+      const res = await this.worker().call({ action: 'search', importId: this.importId, query, limit: 500 });
+      if (res.ok && res.action === 'search' && this.inbox.query.trim() === query) {
+        this.hits = res.hits;
+        this.hitsTotal = res.total;
+      }
+    } finally {
+      this.searching = false;
+      if (this.view === 'inbox') this.refreshInbox();
+    }
+  }
+
+  private renderBatch(): void {
+    const side = this.root.querySelector<HTMLElement>('[data-part="batch"]');
+    if (!side) return;
+    const n = this.selected.size;
+    const targets = GROUPS.flatMap((g) => g.formats).filter((f) => f in FORMAT_META) as ExportFormatId[];
+    const select = h('select', { class: 'cc-field', 'aria-label': 'Convert to' },
+      GROUPS.map((g) => h('optgroup', { label: g.label },
+        g.formats.filter((f) => targets.includes(f as ExportFormatId)).map((f) => h('option', { value: f, selected: f === this.batchTarget }, FORMAT_META[f as ExportFormatId].label)))));
+    select.addEventListener('change', () => {
+      this.batchTarget = select.value as ExportFormatId;
+      this.renderBatch();
+    });
+    const universal = this.batchTarget === 'universalchat' || this.batchTarget === 'universalchat-zip';
+    const how = universal
+      ? 'One archive holding every selected conversation.'
+      : isPackage(this.batchTarget)
+        ? 'One download with a .zip per conversation inside — each inner .zip is the file to share to Telegram.'
+        : 'One download with a file per conversation.';
+    const go = h('button', { class: 'cc-btn cc-btn--primary cc-btn--block', type: 'button', disabled: !n || this.batchRunning },
+      this.batchRunning ? 'Converting…' : n ? `Convert ${formatCount(n)} conversation${n === 1 ? '' : 's'}` : 'Select conversations to convert');
+    go.addEventListener('click', () => void this.runBatch());
+    const clear = h('button', { class: 'cc-link', type: 'button', disabled: !n, onclick: () => {
+      this.selected.clear();
+      this.refreshInbox();
+      this.renderBatch();
+    } }, 'Clear');
+    const r = this.batchResult;
+    replace(side,
+      h('div', { class: 'cc-card' },
+        h('div', { class: 'cc-card__head' }, h('h3', {}, 'Convert several'), clear),
+        h('p', { class: 'cc-muted' }, n ? `${formatCount(n)} selected · ${formatCount(this.rows.filter((x) => this.selected.has(x.index)).reduce((s, x) => s + x.messageCount, 0))} messages` : 'Tick conversations in the list, or open one to edit and convert it on its own.'),
+        this.field('Format', select, TARGET_NOTES[this.batchTarget]),
+        h('p', { class: 'cc-hint' }, how, ' Renames, “Me”, date ranges and removed messages you set on a conversation are applied.'),
+        go,
+        this.batchRunning ? this.progressBlock() : null,
+        this.batchError ? h('div', { class: 'cc-alert cc-alert--error', role: 'alert' }, this.batchError) : null,
+      ),
+      r
+        ? h('div', { class: 'cc-card cc-result', role: 'status' },
+            h('div', { class: 'cc-card__head' }, h('h3', {}, 'Done')),
+            h('p', { class: 'cc-result__file' }, r.fileName, ` · ${formatBytes(r.archiveBytes)}`),
+            h('dl', { class: 'cc-kv' },
+              h('dt', {}, 'Conversations'), h('dd', {}, formatCount(r.conversations)),
+              h('dt', {}, 'Messages'), h('dd', { class: r.messagesOut === r.messagesIn ? 'is-ok' : 'is-warn' }, `${formatCount(r.messagesOut)} of ${formatCount(r.messagesIn)}`),
+              h('dt', {}, 'Media files'), h('dd', {}, `${formatCount(r.mediaWritten)} written`)),
+            r.files.length ? h('details', { class: 'cc-options' }, h('summary', {}, `${formatCount(r.files.length)} files inside`), h('ul', { class: 'cc-notes' }, r.files.map((f) => h('li', {}, `${f.name} · ${formatBytes(f.bytes)}`)))) : null,
+            r.warnings.length ? h('details', { class: 'cc-options' }, h('summary', {}, `${formatCount(r.warnings.length)} notes`), h('ul', { class: 'cc-notes' }, r.warnings.map((w) => h('li', {}, w)))) : null,
+            r.opfsName ? h('button', { class: 'cc-btn', type: 'button', onclick: () => void downloadFromOpfs(r.opfsName!, r.fileName) }, 'Download again') : null)
+        : null,
+    );
+  }
+
+  private batchItems(): Array<{ index: number; edits?: Edits; exportOptions: ExportOptions }> {
+    return [...this.selected].sort((x, y) => x - y).map((index) => {
+      const saved = this.perChat.get(index);
+      const row = this.rows[index];
+      const whatsapp: WhatsAppPackageOptions = { ...this.options, mode: saved?.mode ?? (row?.kind === 'dm' ? 'dm' : 'group'), timeZone: this.timeZone };
+      const self = saved ? saved.selfId : row?.selfId;
+      if (self) whatsapp.selfId = self;
+      const exportOptions: ExportOptions = { order: this.order, whatsapp, ...(saved?.edits.title ? { title: saved.edits.title } : {}) };
+      return { index, ...(saved && Object.keys(saved.edits).length ? { edits: saved.edits } : {}), exportOptions };
+    });
+  }
+
+  private async runBatch(): Promise<void> {
+    if (!this.selected.size || this.batchRunning) return;
+    this.saveCurrent();
+    const items = this.batchItems();
+    const fileName = batchFileName(this.batchTarget, this.archive?.name ?? this.sourceName, items.length);
+    let destination: { kind: 'handle'; handle: FileSystemFileHandle } | { kind: 'opfs'; name: string };
+    if (canPickSaveFile()) {
+      const handle = await pickSaveFile(fileName);
+      if (!handle) return;
+      destination = { kind: 'handle', handle };
+    } else {
+      destination = { kind: 'opfs', name: `chat-converter-${Date.now()}.zip` };
+    }
+    const client = this.worker();
+    const id = client.nextId();
+    this.runningId = id;
+    this.batchRunning = true;
+    this.batchResult = undefined;
+    this.batchError = '';
+    this.progress = { entries: 0, bytes: 0, total: this.rows.filter((r) => this.selected.has(r.index)).reduce((s, r) => s + r.media.bytes, 0) };
+    this.renderBatch();
+    try {
+      const res = await client.call(
+        { action: 'batch', importId: this.importId, items, target: this.batchTarget, destination: destination as never },
+        (entries, bytes) => {
+          this.progress.entries = entries;
+          this.progress.bytes = bytes;
+          this.renderProgress();
+        },
+        id,
+      );
+      if (res.ok && res.action === 'batch') {
+        this.batchResult = {
+          fileName: res.suggestedName,
+          layout: res.layout,
+          conversations: res.conversations,
+          messagesIn: res.messagesIn,
+          messagesOut: res.messagesOut,
+          mediaWritten: res.mediaWritten,
+          files: res.files,
+          warnings: res.warnings,
+          archiveBytes: res.archiveBytes,
+          ...(res.opfsName ? { opfsName: res.opfsName } : {}),
+        };
+        if (res.opfsName) await downloadFromOpfs(res.opfsName, res.suggestedName);
+        this.emit('cc-converted', { target: this.batchTarget, fileName: res.suggestedName, conversations: res.conversations });
+      }
+    } catch (e) {
+      this.batchError = e instanceof Error && e.name === 'AbortError' ? 'Conversion cancelled.' : e instanceof Error ? e.message : String(e);
+    }
+    this.batchRunning = false;
+    this.runningId = '';
+    this.renderBatch();
   }
 
   // ---------------------------------------------------------------- small widgets

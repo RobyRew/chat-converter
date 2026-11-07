@@ -194,6 +194,8 @@ function attachment(path: string, key: string, ctx: ParseContext, hint?: string)
   }
   const local = resolveRef(path, ctx);
   att.ref = local ?? path;
+  const size = local ? ctx.media.get(local)?.size : undefined;
+  if (size !== undefined) att.size = size;
   if (local) att.present = true;
   else {
     att.present = false;

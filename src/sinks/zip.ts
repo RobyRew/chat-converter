@@ -88,6 +88,30 @@ export class ZipSink {
     this.record(name, file.size);
   }
 
+  /**
+   * Streams an entry whose size is not known up front (e.g. a package being written into this one). zip.js
+   * then records the sizes after the data; an entry of this kind larger than 4 GB is refused.
+   */
+  async addStream(name: string, stream: ReadableStream<Uint8Array>, opts: ZipEntryOptions = {}): Promise<number> {
+    this.claim(name);
+    let size = 0;
+    const counted = stream.pipeThrough(
+      new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          size += chunk.byteLength;
+          controller.enqueue(chunk);
+        },
+      }),
+    );
+    await this.writer.add(name, counted, {
+      level: opts.level ?? 0,
+      useUnicodeFileNames: true,
+      ...(opts.lastModified ? { lastModDate: opts.lastModified } : {}),
+    });
+    this.record(name, size);
+    return size;
+  }
+
   /** Writes the central directory and closes the destination. Returns the archive size in bytes. */
   async close(): Promise<number> {
     await this.writer.close();
