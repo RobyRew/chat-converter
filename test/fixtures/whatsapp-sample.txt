@@ -1,0 +1,7 @@
+[12/03/2025, 10:45:30] Alice: Hey, how are you?
+[12/03/2025, 10:46:15] Bob: I'm good! You?
+[12/03/2025, 10:47:02] Alice: Great! Check this out
+[12/03/2025, 10:47:05] Alice: <attached: IMG-001.jpg>
+[12/03/2025, 10:48:00] Bob: Nice photo 😀
+This is a second line of Bob's message
+[12/03/2025, 10:49:00] Alice: bye

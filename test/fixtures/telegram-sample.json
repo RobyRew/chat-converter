@@ -1,0 +1,44 @@
+{
+  "name": "Alice & Bob",
+  "type": "personal_chat",
+  "id": 777000111,
+  "messages": [
+    {
+      "id": 1,
+      "type": "message",
+      "date": "2025-03-12T10:45:30",
+      "date_unixtime": "1741776330",
+      "from": "Alice",
+      "from_id": "user111",
+      "text": "Hey, how are you?",
+      "text_entities": [{ "type": "plain", "text": "Hey, how are you?" }]
+    },
+    {
+      "id": 2,
+      "type": "message",
+      "date": "2025-03-12T10:46:15",
+      "date_unixtime": "1741776375",
+      "from": "Bob",
+      "from_id": "user222",
+      "text": ["Check ", { "type": "bold", "text": "this" }, " out: ", { "type": "text_link", "text": "link", "href": "https://example.com" }],
+      "text_entities": [
+        { "type": "plain", "text": "Check " },
+        { "type": "bold", "text": "this" },
+        { "type": "plain", "text": " out: " },
+        { "type": "text_link", "text": "link", "href": "https://example.com" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "message",
+      "date": "2025-03-12T10:47:00",
+      "date_unixtime": "1741776420",
+      "from": "Alice",
+      "from_id": "user111",
+      "reply_to_message_id": 2,
+      "text": "replying",
+      "text_entities": [{ "type": "plain", "text": "replying" }],
+      "reactions": [{ "type": "emoji", "count": 2, "emoji": "👍" }]
+    }
+  ]
+}

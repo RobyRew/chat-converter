@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.astro/
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
+# local real-export runs write here; never commit personal chat data
+.real-exports/
