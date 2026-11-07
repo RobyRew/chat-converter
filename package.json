@@ -1,7 +1,7 @@
 {
   "name": "@robyrew/chat-converter",
   "version": "0.1.0",
-  "description": "Converts chat exports (Telegram Desktop HTML/JSON, WhatsApp) through one lossless canonical model into other formats, including the package Telegram imports.",
+  "description": "Converts chat exports (Telegram Desktop, WhatsApp, Instagram, Facebook Messenger, Snapchat, VSCO, Hinge) through UniversalChat, one lossless versioned format, into other formats, including the package Telegram imports.",
   "license": "Apache-2.0",
   "author": "RobyRew (https://github.com/RobyRew)",
   "repository": {
