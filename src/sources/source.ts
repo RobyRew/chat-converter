@@ -22,6 +22,17 @@ export interface Source {
   /** Display name: the dropped folder or archive name, without extension. */
   readonly name: string;
   readonly files: readonly SourceFile[];
+  /**
+   * Folders stripped from every path ('/'-joined, no trailing slash), e.g. `your_instagram_activity/messages`
+   * when only that folder was dropped. Exports that reference files by their path from the export's own root
+   * (Meta, Snapchat) put it back to find threads and media.
+   */
+  readonly root?: string;
+}
+
+/** A file's path with the stripped folders put back. */
+export function fullPath(source: Pick<Source, 'root'>, path: string): string {
+  return source.root ? `${source.root}/${path}` : path;
 }
 
 const JUNK = /(?:^|\/)(?:\.DS_Store|Thumbs\.db|desktop\.ini|\._[^/]*)$|(?:^|\/)__MACOSX\//;
@@ -85,6 +96,7 @@ function rebase(file: SourceFile, path: string): SourceFile {
 export function makeSource(fallbackName: string, files: readonly SourceFile[]): Source {
   let list = files.filter((f) => f.path && !isJunk(f.path));
   let name = fallbackName;
+  const stripped: string[] = [];
   for (;;) {
     const first = list[0];
     if (!first) break;
@@ -92,9 +104,10 @@ export function makeSource(fallbackName: string, files: readonly SourceFile[]): 
     const prefix = seg + '/';
     if (!seg || !list.every((f) => f.path.startsWith(prefix) && f.path.length > prefix.length)) break;
     list = list.map((f) => rebase(f, f.path.slice(prefix.length)));
+    stripped.push(seg);
     name = seg;
   }
-  return { name, files: list };
+  return stripped.length ? { name, files: list, root: stripped.join('/') } : { name, files: list };
 }
 
 /** Marker files that identify an export root. */
@@ -121,7 +134,8 @@ export function splitExports(source: Source): Source[] {
   const out: Source[] = [];
   for (const [top, list] of groups) {
     if (list.some((f) => !f.path.includes('/') && isExportMarker(f.path))) {
-      out.push({ name: top, files: list });
+      const root = source.root ? `${source.root}/${top}` : top;
+      out.push({ name: top, files: list, root });
     }
   }
   return out.length ? out : [source];

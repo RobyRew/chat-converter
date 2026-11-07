@@ -65,16 +65,37 @@ export interface WallClock {
  */
 export function zonedTimeToUtc(w: WallClock, tz: string): number {
   const wall = Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute, w.second);
-  const HOUR = 3600000;
+  // Ambiguous (clocks went back): the earliest instant. Skipped (clocks went forward): none is valid,
+  // so the pre-transition offset is used, which lands after the gap.
+  return zonedTimeCandidates(w, tz)[0] ?? wall - zoneOffsetMinutes(wall - 3 * HOUR_MS, tz) * 60000;
+}
+
+const HOUR_MS = 3600000;
+
+/**
+ * Every UTC instant at which `tz` shows the wall-clock time `w`, earliest first: two inside the hour a DST
+ * change repeats, none inside a skipped hour, otherwise one.
+ */
+export function zonedTimeCandidates(w: WallClock, tz: string): number[] {
+  const wall = Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute, w.second);
   // Offsets just before and after any transition near this time give every candidate instant.
-  const offsets = new Set([zoneOffsetMinutes(wall - 3 * HOUR, tz), zoneOffsetMinutes(wall, tz), zoneOffsetMinutes(wall + 3 * HOUR, tz)]);
-  const valid = [...offsets]
+  const offsets = new Set([zoneOffsetMinutes(wall - 3 * HOUR_MS, tz), zoneOffsetMinutes(wall, tz), zoneOffsetMinutes(wall + 3 * HOUR_MS, tz)]);
+  return [...offsets]
     .map((off) => wall - off * 60000)
     .filter((utc) => zoneOffsetMinutes(utc, tz) === (wall - utc) / 60000)
     .sort((a, b) => a - b);
-  // Ambiguous (clocks went back): the earliest instant. Skipped (clocks went forward): none is valid,
-  // so the pre-transition offset is used, which lands after the gap.
-  return valid[0] ?? wall - zoneOffsetMinutes(wall - 3 * HOUR, tz) * 60000;
+}
+
+/** Converts a sequence of wall-clock times; in a repeated hour it takes the instant that keeps the order. */
+export class WallClockSequence {
+  private prev = Number.NEGATIVE_INFINITY;
+  constructor(private readonly tz: string) {}
+  at(w: WallClock): number {
+    const candidates = zonedTimeCandidates(w, this.tz);
+    const ts = candidates.find((c) => c >= this.prev) ?? candidates[0] ?? zonedTimeToUtc(w, this.tz);
+    this.prev = ts;
+    return ts;
+  }
 }
 
 /** Wall-clock fields of `utcMs` once shifted by `offsetMinutes`. */

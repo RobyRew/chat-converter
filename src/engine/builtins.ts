@@ -10,6 +10,9 @@ import { whatsappExporter } from '../exporters/whatsapp';
 import { telegramAndroidExporter, telegramIosExporter, whatsappZipExporter } from '../exporters/whatsapp-package';
 import { Registry } from './registry';
 import { universalchatImporter } from '../importers/universalchat';
+import { snapchatImporter } from '../importers/snapchat';
+import { vscoImporter } from '../importers/vsco';
+import { hingeImporter } from '../importers/hinge';
 import { universalchatExporter, universalchatZipExporter } from '../exporters/universalchat';
 
 /** A fresh registry with all built-in plugins. Use for custom setups or isolation. */
@@ -20,6 +23,9 @@ export function createRegistry(): Registry {
     .registerImporter(instagramImporter)
     .registerImporter(messengerImporter)
     .registerImporter(discordImporter)
+    .registerImporter(snapchatImporter)
+    .registerImporter(vscoImporter)
+    .registerImporter(hingeImporter)
     .registerImporter(universalchatImporter);
   r.registerExporter(telegramExporter)
     .registerExporter(whatsappExporter)
