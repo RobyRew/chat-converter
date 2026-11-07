@@ -78,6 +78,22 @@ export function isUniversalChat(value: unknown): value is UniversalChat {
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/**
+ * Copies the arrays and plain objects of a JSON-shaped value (anything else is kept as it is), so the
+ * reader can normalise in place without touching the caller's value. The model uses no host globals
+ * such as `structuredClone`: it is type-checked with the ES library alone (tsconfig.model.json), as
+ * consumers that only re-export the model do.
+ */
+function cloneData(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(cloneData);
+  if (isObj(v) && (Object.getPrototypeOf(v) === Object.prototype || Object.getPrototypeOf(v) === null)) {
+    const out: Obj = {};
+    for (const [k, x] of Object.entries(v)) out[k] = cloneData(x);
+    return out;
+  }
+  return v;
+}
+
 /** Replaces a value a newer version may have added with its fallback, keeping the original. */
 function normalize(o: Obj, key: string, known: readonly string[], fallback: string | undefined): void {
   const v = o[key];
@@ -115,7 +131,7 @@ function normalizeConversation(c: Obj): void {
  * shape (schemaVersion 1 or 2), and returns a UniversalChat document.
  */
 export function readUniversalChat(value: unknown): UniversalChat {
-  const copy: unknown = structuredClone(value);
+  const copy: unknown = cloneData(value);
   if (isUniversalChat(copy)) {
     const major = Number(String((copy as Obj)['version'] ?? '0').split('.')[0]);
     const ours = Number(UNIVERSAL_CHAT_VERSION.split('.')[0]);
