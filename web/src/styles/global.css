@@ -1,0 +1,150 @@
+@import 'tailwindcss';
+@import '@robyrew/web-config/theme.css';
+
+/* Content is opaque (rw-card); glass is only the floating bar. */
+:root {
+  --app-max: 64rem;
+}
+
+html {
+  background: var(--ground);
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgb(var(--rim-rgb) / 0.08), transparent 60%),
+    radial-gradient(900px 500px at 110% 10%, rgb(var(--rim-rgb) / 0.06), transparent 55%),
+    var(--ground);
+  color: var(--ink);
+  font-family: var(--g-font);
+  -webkit-font-smoothing: antialiased;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.wrap {
+  max-width: var(--app-max);
+  margin-inline: auto;
+  padding-inline: 1.25rem;
+}
+
+.step {
+  scroll-margin-top: 6rem;
+}
+
+.dropzone {
+  border: 1.5px dashed var(--hair);
+  border-radius: var(--rw-r-card);
+  transition: border-color 0.2s var(--rw-ease), background 0.2s var(--rw-ease);
+}
+.dropzone.is-over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1rem;
+  font-size: 0.9rem;
+}
+.kv dt {
+  color: var(--ink-3);
+}
+.kv dd {
+  margin: 0;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.target {
+  text-align: left;
+  border: 1px solid var(--hair);
+  border-radius: var(--rw-r-ctl);
+  padding: 0.85rem 1rem;
+  background: var(--rw-fill);
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.18s var(--rw-ease), background 0.18s var(--rw-ease);
+}
+.target:hover {
+  background: var(--rw-fill-2);
+}
+.target[aria-checked='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.preview-lines {
+  font: 0.78rem/1.5 var(--g-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 22rem;
+  overflow: auto;
+  background: var(--rw-well);
+  border-radius: var(--rw-r-ctl);
+  padding: 0.75rem 0.9rem;
+}
+
+.msglist {
+  position: relative;
+  height: 24rem;
+  overflow: auto;
+  background: var(--rw-well);
+  border-radius: var(--rw-r-ctl);
+  contain: strict;
+}
+.msglist__row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2rem;
+  display: grid;
+  grid-template-columns: 9.5rem 9rem 1fr auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding-inline: 0.9rem;
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--hair-soft);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.msglist__row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.msglist__time {
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.msglist__who {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+.bar {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--rw-well);
+  overflow: hidden;
+}
+.bar > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.25s var(--rw-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

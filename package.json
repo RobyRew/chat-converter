@@ -20,7 +20,9 @@
     "./transforms": "./src/engine/transforms.ts",
     "./richtext": "./src/engine/richtext.ts",
     "./browser": "./src/browser/index.ts",
-    "./node": "./src/node/index.ts"
+    "./node": "./src/node/index.ts",
+    "./ui": "./src/ui/index.ts",
+    "./ui/styles.css": "./src/ui/styles.css"
   },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -36,7 +38,8 @@
     "lint": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.browser.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:real": "vitest run test/real"
+    "test:real": "vitest run test/real",
+    "cli": "tsx src/cli/main.ts"
   },
   "dependencies": {
     "@zip.js/zip.js": "^2.24.0",

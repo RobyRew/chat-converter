@@ -1,6 +1,8 @@
 /// <reference lib="webworker" />
 import { ConversionError } from '../engine/contracts';
 import { exportConversation, importConversation, listExports, writePackage } from '../engine/pipeline';
+import { applyEdits, type Edits } from '../engine/transforms';
+import type { Conversation } from '../model';
 import { sourceFromBlobs, sourceFromInputFile, type Source } from '../sources/index';
 import type {
   ConversationMeta,
@@ -18,6 +20,13 @@ import type {
  */
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 const sources = new Map<string, Source>();
+const conversations = new Map<string, Conversation>();
+
+function resolveConversation(req: { conversation?: Conversation; importId?: string; edits?: Edits }): Conversation {
+  const base = req.conversation ?? (req.importId ? conversations.get(req.importId) : undefined);
+  if (!base) throw new ConversionError('The imported conversation is no longer available; import it again', 'NO_SOURCE');
+  return req.edits ? applyEdits(base, req.edits) : base;
+}
 const running = new Map<string, AbortController>();
 
 function post(msg: WorkerResponse): void {
@@ -69,7 +78,7 @@ async function runPackage(req: PackageRequestMsg): Promise<void> {
   running.set(req.id, abort);
   try {
     const { writable, opfsName } = await destinationStream(req.destination);
-    const result = await writePackage(req.conversation, {
+    const result = await writePackage(resolveConversation(req), {
       target: req.target,
       source,
       destination: writable,
@@ -106,6 +115,7 @@ ctx.onmessage = async (ev: MessageEvent<WorkerRequest>): Promise<void> => {
           ...(req.timeZone ? { timeZone: req.timeZone } : {}),
         });
         sources.set(req.id, source);
+        conversations.set(req.id, conversation);
         const meta: ConversationMeta = {
           kind: conversation.kind,
           messageCount: conversation.messages.length,
@@ -126,9 +136,11 @@ ctx.onmessage = async (ev: MessageEvent<WorkerRequest>): Promise<void> => {
         break;
       }
       case 'export': {
-        const { artifact, report, warnings } = await exportConversation(req.conversation, {
+        const source = req.importId ? sources.get(req.importId) : undefined;
+        const { artifact, report, warnings } = await exportConversation(resolveConversation(req), {
           target: req.target,
           ...(req.exportOptions ? { exportOptions: req.exportOptions } : {}),
+          ...(source ? { source } : {}),
         });
         post({ id: req.id, ok: true, action: 'export', artifact, report, warnings });
         break;
@@ -142,6 +154,7 @@ ctx.onmessage = async (ev: MessageEvent<WorkerRequest>): Promise<void> => {
         break;
       case 'release':
         sources.delete(req.importId);
+        conversations.delete(req.importId);
         post({ id: req.id, ok: true, action: 'release' });
         break;
     }

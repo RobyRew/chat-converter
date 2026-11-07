@@ -61,3 +61,28 @@ export function dateBounds(conv: Conversation): { min: number; max: number } | n
   }
   return { min, max };
 }
+
+/**
+ * Splits a conversation into consecutive parts of at most `maxMessages` messages (for imports that
+ * should go in several smaller archives). Every part keeps the title and all participants.
+ */
+export function splitConversation(conv: Conversation, maxMessages: number): Conversation[] {
+  const size = Math.max(1, Math.floor(maxMessages));
+  if (conv.messages.length <= size) return [conv];
+  const parts: Conversation[] = [];
+  for (let i = 0; i < conv.messages.length; i += size) {
+    parts.push({ ...conv, messages: conv.messages.slice(i, i + size), meta: { ...conv.meta, part: parts.length + 1 } });
+  }
+  return parts.map((p) => ({ ...p, meta: { ...p.meta, parts: parts.length } }));
+}
+
+/** `source` keeps the export's own order; the others sort by time (stable, so equal times keep source order). */
+export type MessageOrder = 'source' | 'oldest-first' | 'newest-first';
+
+export function orderMessages(conv: Conversation, order: MessageOrder = 'source'): Conversation {
+  if (order === 'source') return conv;
+  const indexed = conv.messages.map((m, i) => ({ m, i }));
+  indexed.sort((a, b) => a.m.ts - b.m.ts || a.i - b.i);
+  const sorted = indexed.map((x) => x.m);
+  return { ...conv, messages: order === 'newest-first' ? sorted.reverse() : sorted };
+}

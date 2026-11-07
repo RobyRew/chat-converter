@@ -12,6 +12,7 @@ import {
   type PackageSummary,
 } from './contracts';
 import { buildFidelityReport } from './fidelity';
+import { orderMessages } from './transforms';
 import { MediaStore } from './media';
 import type { Registry } from './registry';
 
@@ -140,8 +141,9 @@ export async function exportConversation(conversation: Conversation, opts: Expor
   }
 
   const media = new MediaStore(opts.source?.files ?? []);
-  const artifact = await exporter.serialize(conversation, { media, warn }, opts.exportOptions);
-  const report = buildFidelityReport(exporter, conversation, warnings);
+  const ordered = exporter.write ? conversation : orderMessages(conversation, opts.exportOptions?.order);
+  const artifact = await exporter.serialize(ordered, { media, warn }, opts.exportOptions);
+  const report = buildFidelityReport(exporter, ordered, warnings);
   return { artifact, report, warnings };
 }
 
@@ -158,6 +160,9 @@ export async function writePackage(conversation: Conversation, req: PackageReque
     throw new ConversionError(`"${req.target}" is not a package format`, 'NOT_A_PACKAGE');
   }
 
+  if (req.exportOptions?.order === 'newest-first') {
+    warn('WhatsApp-format packages keep the chronological order WhatsApp writes; "newest first" was not applied.');
+  }
   const sink = new ZipSink(req.destination, req.onProgress, req.signal);
   const media = new MediaStore(req.source.files);
   const summary = await exporter.write(conversation, { media, warn, sink }, req.exportOptions);

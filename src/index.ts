@@ -17,6 +17,7 @@ export * from './engine/richtext';
 export * from './engine/format';
 export * from './engine/transforms';
 export * from './engine/time';
+export * from './targets/index';
 export * from './worker/types';
 export { createRegistry, defaultRegistry } from './engine/builtins';
 

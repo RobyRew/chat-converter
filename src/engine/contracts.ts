@@ -76,6 +76,11 @@ export interface WhatsAppPackageOptions {
 export interface ExportOptions {
   includeMedia?: boolean;
   title?: string;
+  /**
+   * Message order of the output. WhatsApp-format packages are always written in the export's own
+   * (chronological) order, as WhatsApp writes them; `newest-first` applies to the other formats.
+   */
+  order?: 'source' | 'oldest-first' | 'newest-first';
   whatsapp?: WhatsAppPackageOptions;
 }
 

@@ -1,5 +1,6 @@
 import type { Conversation, ExportFormatId, FidelityReport, PlatformId } from '../model';
 import type { ExportArtifact, ExportOptions, InputFile, PackageSummary } from '../engine/contracts';
+import type { Edits } from '../engine/transforms';
 
 /**
  * Worker message contract — pure types only (no `WebWorker`-lib globals), so DOM apps can import
@@ -36,7 +37,12 @@ export interface ImportRequest {
 export interface ExportRequestMsg {
   id: string;
   action: 'export';
-  conversation: Conversation;
+  /** The conversation to export; omit it to use the one the worker kept for `importId`. */
+  conversation?: Conversation;
+  /** Id of the `import` request: its files supply media and, without `conversation`, its conversation. */
+  importId?: string;
+  /** Edits applied to the kept conversation before export (renames, title, date range…). */
+  edits?: Edits;
   target: ExportFormatId;
   exportOptions?: ExportOptions;
 }
@@ -59,7 +65,9 @@ export interface PackageRequestMsg {
   action: 'package';
   /** Id of the `import` request whose files hold the media. */
   importId: string;
-  conversation: Conversation;
+  /** The conversation to write; omit it to use the one the worker kept for `importId`. */
+  conversation?: Conversation;
+  edits?: Edits;
   target: ExportFormatId;
   exportOptions?: ExportOptions;
   destination: PackageDestination;

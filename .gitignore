@@ -10,3 +10,5 @@ coverage/
 *.log
 # local real-export runs write here; never commit personal chat data
 .real-exports/
+web/dist/
+web/.astro/
