@@ -241,7 +241,12 @@ export function buildWhatsAppChat(conv: Conversation, opts: BuildOptions): Whats
   };
 
   const first = conv.messages[0];
-  const firstIsNotice = !!first && E2E_PREFIX.test(first.content?.text ?? '');
+  const firstIsNotice = !!first && (first.meta?.['e2eNotice'] === true || E2E_PREFIX.test(first.content?.text ?? ''));
+  // A WhatsApp source is written back in its own header style and line ending; packages for Telegram
+  // reuse raw bodies only from iOS-style files, whose markers match the iOS header.
+  const sourceStyle = fromWhatsApp && conv.meta?.['waHeaderStyle'] === 'android' ? 'android' : 'ios';
+  const rawAllowed = fromWhatsApp && (flavor === 'whatsapp' || sourceStyle === 'ios');
+  const eol = flavor === 'whatsapp' && fromWhatsApp && conv.meta?.['waEol'] === '\n' ? '\n' : CRLF;
   if ((opts.noticeLine ?? true) && first && !firstIsNotice) {
     const s = stamp(wallFor(first));
     out.push(`${s} ${title}: ${LRM}${E2E_NOTICE}${CRLF}`);
@@ -265,32 +270,37 @@ export function buildWhatsAppChat(conv: Conversation, opts: BuildOptions): Whats
 
     // A WhatsApp message whose text is unchanged is written back exactly as it was read (marks
     // included); only attachment names that this package changes are substituted.
-    const raw = fromWhatsApp ? rawBodyOf(m) : undefined;
+    const raw = rawAllowed ? rawBodyOf(m) : undefined;
     if (raw !== undefined) {
       let body = raw;
       for (const a of m.attachments ?? []) {
         if (!a.fileName) continue; // an "omitted" marker, already in the raw text
         const source = a.ref && a.present !== false ? opts.media?.get(a.ref) : undefined;
-        const reference = `<attached: ${a.fileName}>`;
+        // The tag is in the phone's language (`<attached: …>`, `<adjunto: …>`…); keep it, swap the name.
+        const reference = new RegExp(`(\u200e?)<([^<>:\n]{2,40}):(\\s*)${escapeRegExp(a.fileName)}>`);
         if (!opts.includeMedia) continue;
         if (!source || source.size === 0) {
-          body = body.replace(new RegExp(`\u200e?${escapeRegExp(reference)}`), `${LRM}${OMITTED_LABEL[a.kind]}`);
+          body = body.replace(reference, `${LRM}${OMITTED_LABEL[a.kind]}`);
           mediaOmitted++;
           continue;
         }
         const name = uniqueName(entryName(a, source.path, seq, w, flavor, true, false));
         media.push({ name, ref: source.path, size: source.size, lastModified: when });
-        if (name !== a.fileName) body = body.replace(reference, `<attached: ${name}>`);
+        if (name !== a.fileName) body = body.replace(reference, (_m, lead: string, tag: string, gap: string) => `${lead}<${tag}:${gap}${name}>`);
       }
       const rawSender = typeof m.meta?.['waSender'] === 'string' ? (m.meta['waSender'] as string) : undefined;
       const attributed = typeof m.meta?.['attributedTo'] === 'string' ? (m.meta['attributedTo'] as string) : undefined;
-      const who = m.senderId
-        ? rawSender && rawSender.replace(/[\u200e\u200f]/g, '') === sender
-          ? rawSender
-          : sender
-        : (rawSender ?? attributed ?? title);
+      // The sender as written (WhatsApp writes non-contacts as "~\u202fName") unless it was renamed since.
+      const current = m.senderId ? conv.participants.find((p) => p.id === m.senderId)?.displayName : undefined;
+      const unchanged = rawSender !== undefined && current !== undefined && rawSender.replace(/[\u200e\u200f\u202a-\u202e\ufeff]/g, '') === current;
+      const who = m.senderId ? (unchanged ? rawSender : sender) : (rawSender ?? attributed ?? title);
       const lead = m.meta?.['waLead'] ? LRM : '';
-      out.push(body ? `${lead}${stamp(w)} ${who}: ${body}${CRLF}` : `${lead}${stamp(w)} ${who}:${CRLF}`);
+      const original = typeof m.meta?.['waStamp'] === 'string' ? (m.meta['waStamp'] as string) : undefined;
+      const head =
+        flavor === 'whatsapp' && sourceStyle === 'android' && original
+          ? `${original} - ${who}`
+          : `${original && (flavor === 'whatsapp' || sourceStyle === 'ios') ? `[${original}]` : stamp(w)} ${who}`;
+      out.push(body ? `${lead}${head}: ${body}${eol}` : `${lead}${head}:${eol}`);
       messagesOut++;
       return;
     }
@@ -405,7 +415,7 @@ export function buildWhatsAppChat(conv: Conversation, opts: BuildOptions): Whats
     let body = safeCaption;
     if (refs.length) body = body ? `${body} ${refs.join('\n')}` : refs.join('\n');
     const lead = refs.length ? LRM : '';
-    out.push(body ? `${lead}${stamp(w)} ${sender}: ${body}${CRLF}` : `${lead}${stamp(w)} ${sender}:${CRLF}`);
+    out.push(body ? `${lead}${stamp(w)} ${sender}: ${body}${eol}` : `${lead}${stamp(w)} ${sender}:${eol}`);
     messagesOut++;
   });
 

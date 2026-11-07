@@ -48,6 +48,8 @@ interface Pending {
   rawSender?: string;
   /** The line opened with U+200E (WhatsApp marks lines that carry media). */
   leadMark: boolean;
+  /** The date and time exactly as written (`2/7/25, 16:10:42`), for a byte-identical re-export. */
+  stamp: string;
 }
 
 function matchHeader(line: string): Header | null {
@@ -126,16 +128,6 @@ function refineKind(fileName: string, kind: Attachment['kind']): Attachment['kin
   return kind;
 }
 
-const OMITTED_KIND: Record<string, Attachment['kind']> = {
-  image: 'image',
-  video: 'video',
-  audio: 'audio',
-  gif: 'gif',
-  sticker: 'sticker',
-  document: 'file',
-  'contact card': 'contact',
-};
-
 function makeAttachment(rawName: string, ctx: ParseContext): Attachment {
   // Names can carry marks of their own (contact cards: `00000004-‎Abi UK….vcf`); look up the exact
   // entry first, then the name without marks.
@@ -150,18 +142,55 @@ function makeAttachment(rawName: string, ctx: ParseContext): Attachment {
   return att;
 }
 
-function omittedAttachment(word: string, n: number): Attachment {
+function omittedAttachment(kind: Attachment['kind'], n: number): Attachment {
   return {
-    id: attachmentId(`omitted:${n}:${word}`),
-    kind: OMITTED_KIND[word.toLowerCase()] ?? 'unknown',
+    id: attachmentId(`omitted:${n}:${kind}`),
+    kind,
     present: false,
     omitted: 'not_included',
   };
 }
 
-const RE_ATTACH_IOS_RAW = /‎?<attached:\s*([^>]+)>/gi;
-const RE_OMITTED_TAIL = /(^|\s)‎((?:image|video|audio|GIF|sticker|document|Contact card) omitted)\s*$/i;
-const RE_EDITED_TAIL = /\s*‎?<This message was edited>\s*$/;
+/*
+ * WhatsApp writes these markers in the phone's language. English and Spanish are taken from real exports
+ * (`<attached: …>` / `<adjunto: …>`, `<This message was edited>` / `<Se editó este mensaje.>`); the other
+ * languages are WhatsApp's published strings as best known and are only used when a file uses them.
+ */
+const ATTACH_TAGS = ['attached', 'adjunto', 'adjunt', 'anexado', 'anexo', 'allegato', 'Anhang', 'pièce jointe', 'bijgevoegd', 'atașat', 'atasat', 'załącznik', 'eklendi'];
+const EDITED_MARKERS = [
+  'This message was edited',
+  'Se editó este mensaje.',
+  "S'ha editat aquest missatge.",
+  'Acest mesaj a fost editat.',
+  'Mensagem editada',
+  'Esta mensagem foi editada',
+  'Diese Nachricht wurde bearbeitet.',
+  'Ce message a été modifié',
+  'Questo messaggio è stato modificato',
+];
+const OMITTED_WORDS: Array<[RegExp, Attachment['kind']]> = [
+  [/^(?:image omitted|imagen omitida|imatge omesa|imagine omisă|imagem ocultada|Bild weggelassen|image absente|immagine omessa)$/i, 'image'],
+  [/^(?:video omitted|v[ií]deo omitido|v[ií]deo omès|video omis|v[ií]deo ocultado|Video weggelassen|vidéo absente|video omesso)$/i, 'video'],
+  [/^(?:audio omitted|audio omitido|àudio omès|audio omis|áudio ocultado|Audio weggelassen|audio omis|audio omesso)$/i, 'audio'],
+  [/^(?:sticker omitted|sticker omitido|adhesiu omès|autocolant omis|figurinha omitida|Sticker weggelassen|sticker omis|sticker omesso)$/i, 'sticker'],
+  [/^(?:GIF omitted|GIF omitido|GIF omès|GIF omis|GIF ocultado|GIF weggelassen|GIF absent|GIF omesso)$/i, 'gif'],
+  [/^(?:document omitted|documento omitido|document omès|document omis|documento ocultado|Dokument weggelassen|document absent|documento omesso)$/i, 'file'],
+  [/^(?:Contact card omitted|Tarjeta de contacto omitida|Targeta de contacte omesa|Card de contact omis|Cartão de contato omitido|Kontaktkarte weggelassen|Fiche contact absente|Scheda contatto omessa)$/i, 'contact'],
+];
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+const RE_ATTACH_RAW = new RegExp(String.raw`‎?<(${ATTACH_TAGS.map(escapeRe).join('|')})\s*:\s*([^<>\n]+)>`, 'gi');
+const RE_ATTACH_ANY = /‎?<([^<>:\n]{2,40}):\s*(\d{8}-[^<>\n]+)>/g;
+const RE_OMITTED_TAIL = /(^|\s)‎([^‎\n]{3,40})\s*$/;
+const RE_EDITED_TAIL = new RegExp(String.raw`\s*‎?<(?:${EDITED_MARKERS.map(escapeRe).join('|')})>\s*$`);
+
+function omittedKind(phrase: string): Attachment['kind'] | undefined {
+  const plain = phrase.replace(STRIP_MARKS, '').trim();
+  for (const [re, kind] of OMITTED_WORDS) if (re.test(plain)) return kind;
+  return undefined;
+}
 
 /** Splits a raw message body (marks kept) into attachments, the caption, and WhatsApp's edit marker. */
 function extractAttachments(
@@ -174,8 +203,15 @@ function extractAttachments(
     edited = true;
     return '';
   });
-  remaining = remaining.replace(RE_ATTACH_IOS_RAW, (_m, fn: string) => {
+  // Known tags in any language, then any `<word: NNNNNNNN-…>` reference in a language not listed.
+  remaining = remaining.replace(RE_ATTACH_RAW, (_m, _tag: string, fn: string) => {
     attachments.push(makeAttachment(fn, ctx));
+    return '';
+  });
+  remaining = remaining.replace(RE_ATTACH_ANY, (m, _tag: string, fn: string) => {
+    const att = makeAttachment(fn, ctx);
+    if (!att.ref && !/^\d{8}-/.test(att.fileName ?? '')) return m;
+    attachments.push(att);
     return '';
   });
   remaining = remaining.replace(RE_ATTACH_ANDROID, (_m, fn: string) => {
@@ -183,14 +219,15 @@ function extractAttachments(
     return '';
   });
   const tail = RE_OMITTED_TAIL.exec(remaining);
-  if (tail) {
-    attachments.push(omittedAttachment((tail[2] ?? '').replace(/ omitted$/i, ''), attachments.length));
+  const tailKind = tail ? omittedKind(tail[2] ?? '') : undefined;
+  if (tail && tailKind) {
+    attachments.push(omittedAttachment(tailKind, attachments.length));
     remaining = remaining.slice(0, tail.index) + (tail[1] ?? '');
   }
   const plain = remaining.replace(STRIP_MARKS, '').trim();
-  if (RE_OMITTED_WHOLE.test(plain)) {
-    const word = /^(image|video|audio|GIF|sticker|document|Contact card) omitted$/i.exec(plain)?.[1] ?? 'media';
-    attachments.push(omittedAttachment(word, attachments.length));
+  const wholeKind = omittedKind(plain);
+  if (wholeKind || RE_OMITTED_WHOLE.test(plain)) {
+    attachments.push(omittedAttachment(wholeKind ?? 'unknown', attachments.length));
     remaining = '';
   }
   return { attachments, remaining: remaining.replace(STRIP_MARKS, ''), edited };
@@ -244,7 +281,9 @@ async function parse(input: ImportInput, ctx: ParseContext): Promise<Conversatio
 
   // Marks are kept for one check: WhatsApp opens the text of a system line with U+200E
   // (`[t] Group: ‎Eli added you`), which a user message never does.
-  const rawLines = (await readText(chatFile)).replace(/\r\n?/g, '\n').split('\n');
+  const fileText = await readText(chatFile);
+  const eol = fileText.includes('\r\n') ? '\r\n' : '\n';
+  const rawLines = fileText.replace(/\r\n?/g, '\n').split('\n');
   if (rawLines.length > 1 && rawLines[rawLines.length - 1] === '') rawLines.pop();
   const lines = rawLines.map((l) => l.replace(STRIP_MARKS, ''));
 
@@ -309,12 +348,14 @@ async function parse(input: ImportInput, ctx: ParseContext): Promise<Conversatio
       waRaw: rawBody,
       waLead: p.leadMark,
       waContentText: msg.content?.text ?? '',
+      waStamp: p.stamp,
       ...(p.rawSender ? { waSender: p.rawSender } : {}),
     };
     return msg;
   };
 
   const tz = ctx.timeZone;
+  let headerStyle: 'ios' | 'android' | undefined;
   const messages: Message[] = [];
   let current: Pending | null = null;
   let index = 0;
@@ -340,9 +381,14 @@ async function parse(input: ImportInput, ctx: ParseContext): Promise<Conversatio
         system: sender !== undefined && isSystemText(rawLine, sender),
         rawLines: [rawSplit && rawSplit.sender !== undefined === (sender !== undefined) ? rawSplit.text : text],
         leadMark: /^[\u200e\u200f]/.test(rawLine),
+        stamp: `${h.date}, ${h.time}`.replace(/^(.*?),\s*,/, '$1,'),
       };
+      if (!headerStyle) headerStyle = /^[\u200e\u200f]*\[/.test(rawLine) ? 'ios' : 'android';
+      // Keep the exact separator between date and time ("2/7/25, 16:10" vs "2/7/25 16:10").
+      const exact = /^[\u200e\u200f]*\[?([^\]]*?)(?:\]|\s+-\s)/.exec(rawLine);
+      if (exact?.[1]) pending.stamp = exact[1];
       if (sender) pending.sender = sender;
-      if (rawSplit?.sender !== undefined && rawSplit.sender !== sender) pending.rawSender = rawSplit.sender;
+      if (rawSplit?.sender !== undefined) pending.rawSender = rawSplit.sender;
       current = pending;
     } else if (current) {
       current.lines.push(line);
@@ -355,7 +401,7 @@ async function parse(input: ImportInput, ctx: ParseContext): Promise<Conversatio
   // person in a private chat, or "You" in a chat with yourself.
   const first = messages[0];
   let groupSignals = messages.some((m) => m.kind === 'system' && GROUP_EVENT.test(m.content?.text ?? ''));
-  if (first && E2E_NOTICE.test(first.content?.text ?? '')) {
+  if (first && (E2E_NOTICE.test(first.content?.text ?? '') || (first.kind === 'system' && E2E_WORDS.test(first.content?.text ?? '')))) {
     first.kind = 'system';
     first.meta = { ...first.meta, e2eNotice: true };
     const noticeSender = first.senderId;
@@ -387,12 +433,30 @@ async function parse(input: ImportInput, ctx: ParseContext): Promise<Conversatio
     originPlatform: 'whatsapp',
     participants: people,
     messages,
+    meta: { waHeaderStyle: headerStyle ?? 'ios', waEol: eol },
   };
   if (title) conversation.title = title;
   return conversation;
 }
 
-const E2E_NOTICE = /^Messages and calls are end-to-end encrypted\b/;
+/** Words of the encryption notice in any wording (a chat with yourself says "Messages to yourself are…"). */
+const E2E_WORDS = /end-to-end|extremo a extremo|extrem a extrem|criptate integral|ponta a ponta|Ende-zu-Ende|bout en bout/i;
+
+// The first line of every export, in the languages known so far (English and Spanish seen in real files).
+const E2E_NOTICE = new RegExp(
+  '^(?:' +
+    [
+      'Messages and calls are end-to-end encrypted',
+      'Los mensajes y las llamadas están cifrados de extremo a extremo',
+      'Els missatges i les trucades estan xifrats',
+      'Mesajele și apelurile sunt criptate',
+      'As mensagens e as chamadas são protegidas com a criptografia de ponta a ponta',
+      'Nachrichten und Anrufe sind Ende-zu-Ende-verschlüsselt',
+      'Les messages et les appels sont chiffrés de bout en bout',
+      'I messaggi e le chiamate sono crittografati end-to-end',
+    ].join('|') +
+    ')',
+);
 const GROUP_EVENT = /\b(?:created (?:this )?group|created group|added you|changed the group|changed this group|left|joined using|removed)\b/i;
 
 /** `‎POLL:\n<question>\n‎OPTION: <text> (<n> votes)` (marks already stripped). */
