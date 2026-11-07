@@ -140,3 +140,33 @@ sender, time to the second, text, entities, attachments, replies, forwards, reac
 durations for all non-service messages; the synthetic fixture under `test/fixtures/telegram-export`
 pins the same parity in CI without personal data.
 **Status:** Accepted.
+
+## ADR-0005 — Two WhatsApp-format packages: faithful to WhatsApp, and tuned to Telegram's importer (2026-11-07) · Accepted
+**Context:** Telegram imports chats only as WhatsApp (or LINE/KakaoTalk) exports. Its iOS client
+(Telegram-iOS `ShareExtensionContext.swift` / `ChatImportActivityScreen.swift` @ `24638bc`) accepts one
+`.zip`, takes the first entry matching `_chat\.txt` as the chat, uploads every other non-empty entry,
+and types each upload by its *name*: `.*?\.jpg` photo, `\d+-VIDEO-.*?\.mp4` video,
+`\d+-STICKER-.*?\.webp` sticker, `\d+-AUDIO-.*?\.opus` voice, anything else a file; `file_name` is the
+path inside the zip; SSZipArchive decodes unflagged names from DOS-made zips as CP437; one failed upload
+aborts the whole import. Android (`LaunchActivity.java` @ `3de37c8`) takes the first `.txt` of a zip,
+never uploads media from a zip, and refuses a history file over 32 MiB. Real WhatsApp 2026 exports
+(iOS/macOS) put media first and `_chat.txt` last, end each message with CRLF and break lines inside a
+message with LF, and mark media lines with U+200E.
+**Decision:** One generator (`exporters/whatsapp-format.ts`) writes WhatsApp's byte format; three
+package exporters stream it with media:
+- `whatsapp-zip` — WhatsApp's own layout and names (`_chat.txt` last, `-GIF-`), edit markers kept.
+- `telegram-ios` — `_chat.txt` first; flat entries; GIFs and round videos as `-VIDEO-….mp4` (iOS has no
+  GIF type; `.MOV` renamed to `.mp4`); voice `.ogg` → `-AUDIO-….opus` (same Ogg Opus bytes); webp
+  stickers `-STICKER-`; documents keep their name, sanitised and neutralised so no regex retypes them
+  and none looks like a main chat file; contacts as `.vcf` (rebuilt from the contact fields when the
+  export has no vCard); zero-byte files become "omitted" markers.
+- `telegram-android` — the same zip, with warnings that only the text is imported and about 32 MiB.
+`whatsapp-txt` uses the same generator for the text alone.
+WhatsApp messages keep their raw body (`meta.waRaw`, marks included) on import and are written back
+verbatim while their text is unchanged; the two real WhatsApp exports used here round-trip
+byte-identical through `whatsapp-zip`.
+**Unverifiable from source:** how Telegram's *server* parses the text (which sender is the importing
+user in a private chat, the time zone of the wall-clock times, whether it reads WhatsApp markup or the
+edit marker). The private-chat notice line is attributed to the other person, as in WhatsApp's own
+exports; a test import settles the rest and is recorded in `docs/formats/telegram-import.md`.
+**Status:** Accepted.

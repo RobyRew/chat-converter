@@ -8,6 +8,7 @@ import {
 } from '../engine/contracts';
 import { attachmentId, conversationId, messageId, participantId } from '../engine/ids';
 import { parseWhatsAppMarkup } from '../engine/richtext';
+import { offsetOf, zonedTimeToUtc, type WallClock } from '../engine/time';
 import { baseName, readHeadText, readText, type SourceFile } from '../sources/source';
 
 /** Bidirectional/format marks WhatsApp sprinkles into exports — stripped before parsing. */
@@ -21,7 +22,6 @@ const RE_IOS = new RegExp(String.raw`^\[(${DATE}),?\s+(${TIME})\]\s?([\s\S]*)$`)
 const RE_ANDROID = new RegExp(String.raw`^(${DATE}),?\s+(${TIME})\s+-\s+([\s\S]*)$`);
 
 // Attachment markers (extracted from anywhere in a message; remaining text is the caption).
-const RE_ATTACH_IOS = /<attached:\s*([^>]+)>/gi;
 const RE_ATTACH_ANDROID =
   /(\S[^\n]*?\.\w{2,5})\s*\((?:file attached|archivo adjunto|fitxer adjunt|fișier atașat|datei angehängt)\)/gi;
 const RE_OMITTED_WHOLE =
@@ -36,8 +36,18 @@ interface Header {
 interface Pending {
   sender?: string;
   ts: number;
+  /** Offset of the written wall clock from `ts`, in minutes. */
+  offset: number;
   index: number;
   lines: string[];
+  /** WhatsApp system line (group events, timer notices…). */
+  system: boolean;
+  /** The message body as written, marks included, for a byte-identical WhatsApp re-export. */
+  rawLines: string[];
+  /** Sender as written (e.g. `‎You`), when it differs from the plain name. */
+  rawSender?: string;
+  /** The line opened with U+200E (WhatsApp marks lines that carry media). */
+  leadMark: boolean;
 }
 
 function matchHeader(line: string): Header | null {
@@ -74,7 +84,7 @@ function detectDateOrder(triples: Array<[number, number, number]>): DateOrder {
   return 'dmy'; // most common worldwide; also the safe default
 }
 
-function toEpoch(date: string, time: string, order: DateOrder): number | null {
+function toWall(date: string, time: string, order: DateOrder): WallClock | null {
   const t = splitDate(date);
   if (!t) return null;
   let y: number;
@@ -93,9 +103,8 @@ function toEpoch(date: string, time: string, order: DateOrder): number | null {
   const ap = tm[4]?.toLowerCase();
   if (ap === 'p' && hh < 12) hh += 12;
   if (ap === 'a' && hh === 12) hh = 0;
-
-  const ms = Date.UTC(y, mo - 1, d, hh, mm, ss);
-  return Number.isNaN(ms) ? null : ms;
+  if (Number.isNaN(Date.UTC(y, mo - 1, d, hh, mm, ss))) return null;
+  return { year: y, month: mo, day: d, hour: hh, minute: mm, second: ss };
 }
 
 function kindFromName(name: string): Attachment['kind'] {
@@ -117,27 +126,74 @@ function refineKind(fileName: string, kind: Attachment['kind']): Attachment['kin
   return kind;
 }
 
-function makeAttachment(fileName: string, ctx: ParseContext): Attachment {
-  const att: Attachment = { id: attachmentId(fileName), kind: refineKind(fileName, kindFromName(fileName)), fileName };
-  if (ctx.media.has(fileName)) att.ref = fileName;
+const OMITTED_KIND: Record<string, Attachment['kind']> = {
+  image: 'image',
+  video: 'video',
+  audio: 'audio',
+  gif: 'gif',
+  sticker: 'sticker',
+  document: 'file',
+  'contact card': 'contact',
+};
+
+function makeAttachment(rawName: string, ctx: ParseContext): Attachment {
+  // Names can carry marks of their own (contact cards: `00000004-‎Abi UK….vcf`); look up the exact
+  // entry first, then the name without marks.
+  const exact = rawName.replace(/^[\s‎‏]+|[\s‎‏]+$/g, '');
+  const plain = exact.replace(STRIP_MARKS, '');
+  const fileName = ctx.media.has(exact) ? exact : plain;
+  const att: Attachment = { id: attachmentId(plain), kind: refineKind(plain, kindFromName(plain)), fileName };
+  if (ctx.media.has(fileName)) {
+    att.ref = fileName;
+    att.present = true;
+  }
   return att;
 }
 
-function extractAttachments(text: string, ctx: ParseContext): { attachments: Attachment[]; remaining: string } {
+function omittedAttachment(word: string, n: number): Attachment {
+  return {
+    id: attachmentId(`omitted:${n}:${word}`),
+    kind: OMITTED_KIND[word.toLowerCase()] ?? 'unknown',
+    present: false,
+    omitted: 'not_included',
+  };
+}
+
+const RE_ATTACH_IOS_RAW = /‎?<attached:\s*([^>]+)>/gi;
+const RE_OMITTED_TAIL = /(^|\s)‎((?:image|video|audio|GIF|sticker|document|Contact card) omitted)\s*$/i;
+const RE_EDITED_TAIL = /\s*‎?<This message was edited>\s*$/;
+
+/** Splits a raw message body (marks kept) into attachments, the caption, and WhatsApp's edit marker. */
+function extractAttachments(
+  raw: string,
+  ctx: ParseContext,
+): { attachments: Attachment[]; remaining: string; edited: boolean } {
   const attachments: Attachment[] = [];
-  let remaining = text.replace(RE_ATTACH_IOS, (_m, fn: string) => {
-    attachments.push(makeAttachment(fn.trim(), ctx));
+  let edited = false;
+  let remaining = raw.replace(RE_EDITED_TAIL, () => {
+    edited = true;
+    return '';
+  });
+  remaining = remaining.replace(RE_ATTACH_IOS_RAW, (_m, fn: string) => {
+    attachments.push(makeAttachment(fn, ctx));
     return '';
   });
   remaining = remaining.replace(RE_ATTACH_ANDROID, (_m, fn: string) => {
-    attachments.push(makeAttachment(fn.trim(), ctx));
+    attachments.push(makeAttachment(fn, ctx));
     return '';
   });
-  if (RE_OMITTED_WHOLE.test(remaining.trim())) {
-    attachments.push({ id: attachmentId('omitted' + attachments.length), kind: 'unknown', meta: { omitted: true } });
+  const tail = RE_OMITTED_TAIL.exec(remaining);
+  if (tail) {
+    attachments.push(omittedAttachment((tail[2] ?? '').replace(/ omitted$/i, ''), attachments.length));
+    remaining = remaining.slice(0, tail.index) + (tail[1] ?? '');
+  }
+  const plain = remaining.replace(STRIP_MARKS, '').trim();
+  if (RE_OMITTED_WHOLE.test(plain)) {
+    const word = /^(image|video|audio|GIF|sticker|document|Contact card) omitted$/i.exec(plain)?.[1] ?? 'media';
+    attachments.push(omittedAttachment(word, attachments.length));
     remaining = '';
   }
-  return { attachments, remaining };
+  return { attachments, remaining: remaining.replace(STRIP_MARKS, ''), edited };
 }
 
 function splitSender(rest: string): { sender?: string; text: string } {
@@ -186,9 +242,11 @@ async function parse(input: ImportInput, ctx: ParseContext): Promise<Conversatio
   const chatFile = pickChatFile(input.files);
   if (!chatFile) throw new ConversionError('No WhatsApp .txt chat file found', 'NO_CHAT_FILE');
 
-  const raw = (await readText(chatFile)).replace(/\r\n?/g, '\n').replace(STRIP_MARKS, '');
-  const lines = raw.split('\n');
-  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  // Marks are kept for one check: WhatsApp opens the text of a system line with U+200E
+  // (`[t] Group: ‎Eli added you`), which a user message never does.
+  const rawLines = (await readText(chatFile)).replace(/\r\n?/g, '\n').split('\n');
+  if (rawLines.length > 1 && rawLines[rawLines.length - 1] === '') rawLines.pop();
+  const lines = rawLines.map((l) => l.replace(STRIP_MARKS, ''));
 
   const triples: Array<[number, number, number]> = [];
   for (const line of lines) {
@@ -200,7 +258,7 @@ async function parse(input: ImportInput, ctx: ParseContext): Promise<Conversatio
   }
   const order = detectDateOrder(triples);
 
-  const title = chatTitle(chatFile.path, input.source.name);
+  let title = chatTitle(chatFile.path, input.source.name);
   const convId = conversationId('whatsapp', baseName(chatFile.path) || title || 'whatsapp');
 
   const participants = new Map<string, Participant>();
@@ -215,54 +273,151 @@ async function parse(input: ImportInput, ctx: ParseContext): Promise<Conversatio
   };
 
   const finalize = (p: Pending): Message => {
-    const { attachments, remaining } = extractAttachments(p.lines.join('\n'), ctx);
+    const rawBody = p.rawLines.join('\n');
+    const { attachments, remaining, edited } = extractAttachments(rawBody, ctx);
     const caption = remaining.trim();
     const msg: Message = {
       id: messageId(convId, p.index, p.ts, p.sender ?? ''),
       ts: p.ts,
-      kind: p.sender ? 'text' : 'system',
+      tzOffsetMinutes: p.offset,
+      kind: p.sender && !p.system ? 'text' : 'system',
     };
     if (p.sender) msg.senderId = ensureParticipant(p.sender);
     if (attachments.length) {
       msg.attachments = attachments;
       msg.kind = attachments.some((a) => a.kind === 'sticker') ? 'sticker' : 'media';
     }
-    if (caption) {
-      const rt = parseWhatsAppMarkup(caption);
+    const poll = parsePoll(caption);
+    if (poll) {
+      msg.kind = 'poll';
+      msg.poll = poll;
+      msg.content = {
+        text: `📊 ${poll.question}\n${poll.options.map((o) => `• ${o.text} (${o.votes ?? 0})`).join('\n')}`,
+        entities: [],
+      };
+    } else if (caption) {
+      const rt = p.system ? { text: caption, entities: [] } : parseWhatsAppMarkup(caption);
       if (rt.text) msg.content = rt;
     }
+    if (edited) {
+      // WhatsApp marks edits but does not export when they happened.
+      msg.editedAt = p.ts;
+      msg.meta = { ...msg.meta, editedTimeUnknown: true };
+    }
+    msg.meta = {
+      ...msg.meta,
+      waRaw: rawBody,
+      waLead: p.leadMark,
+      waContentText: msg.content?.text ?? '',
+      ...(p.rawSender ? { waSender: p.rawSender } : {}),
+    };
     return msg;
   };
 
+  const tz = ctx.timeZone;
   const messages: Message[] = [];
   let current: Pending | null = null;
   let index = 0;
 
-  for (const line of lines) {
+  rawLines.forEach((rawLine, i) => {
+    const line = lines[i] ?? '';
     const h = matchHeader(line);
     if (h) {
       if (current) messages.push(finalize(current));
       const { sender, text } = splitSender(h.rest);
-      const pending: Pending = { ts: toEpoch(h.date, h.time, order) ?? 0, index: index++, lines: [text] };
+      // The same split on the raw line keeps the marks of the sender and the body.
+      const rawHeader = matchHeader(rawLine.replace(/^[\u200e\u200f]+/, ''));
+      const rawSplit = rawHeader ? splitSender(rawHeader.rest) : undefined;
+      const wall = toWall(h.date, h.time, order);
+      // Without a zone the wall clock is kept as-is (offset 0), so a WhatsApp → WhatsApp round trip
+      // reproduces every time exactly; with one, the instant is computed in that zone.
+      const ts = wall ? (tz ? zonedTimeToUtc(wall, tz) : Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour, wall.minute, wall.second)) : 0;
+      const pending: Pending = {
+        ts,
+        offset: wall && tz ? offsetOf(wall, ts) : 0,
+        index: index++,
+        lines: [text],
+        system: sender !== undefined && isSystemText(rawLine, sender),
+        rawLines: [rawSplit && rawSplit.sender !== undefined === (sender !== undefined) ? rawSplit.text : text],
+        leadMark: /^[\u200e\u200f]/.test(rawLine),
+      };
       if (sender) pending.sender = sender;
+      if (rawSplit?.sender !== undefined && rawSplit.sender !== sender) pending.rawSender = rawSplit.sender;
       current = pending;
     } else if (current) {
       current.lines.push(line);
+      current.rawLines.push(rawLine);
+    }
+  });
+  if (current) messages.push(finalize(current));
+
+  // The first line is the end-to-end notice, attributed to the chat title: the group's name, the other
+  // person in a private chat, or "You" in a chat with yourself.
+  const first = messages[0];
+  let groupSignals = messages.some((m) => m.kind === 'system' && GROUP_EVENT.test(m.content?.text ?? ''));
+  if (first && E2E_NOTICE.test(first.content?.text ?? '')) {
+    first.kind = 'system';
+    first.meta = { ...first.meta, e2eNotice: true };
+    const noticeSender = first.senderId;
+    const person = noticeSender ? participants.get(noticeSender) : undefined;
+    if (noticeSender && person) {
+      const own = messages.filter((m) => m.senderId === noticeSender);
+      if (own.every((m) => m.kind === 'system')) {
+        // A chat name, not a person: it becomes the title and its lines stay as unattributed system lines.
+        for (const m of own) {
+          delete m.senderId;
+          m.meta = { ...m.meta, attributedTo: person.displayName };
+        }
+        participants.delete(noticeSender);
+        if (person.displayName !== 'You') {
+          title ??= person.displayName;
+          if (own.length > 1) groupSignals = true;
+        }
+      } else {
+        title ??= person.displayName;
+      }
     }
   }
-  if (current) messages.push(finalize(current));
 
   const people = [...participants.values()];
   const conversation: Conversation = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: convId,
-    kind: people.length > 2 ? 'group' : 'dm',
+    kind: people.length > 2 || groupSignals ? 'group' : 'dm',
     originPlatform: 'whatsapp',
     participants: people,
     messages,
   };
   if (title) conversation.title = title;
   return conversation;
+}
+
+const E2E_NOTICE = /^Messages and calls are end-to-end encrypted\b/;
+const GROUP_EVENT = /\b(?:created (?:this )?group|created group|added you|changed the group|changed this group|left|joined using|removed)\b/i;
+
+/** `‎POLL:\n<question>\n‎OPTION: <text> (<n> votes)` (marks already stripped). */
+function parsePoll(caption: string): NonNullable<Message['poll']> | undefined {
+  if (!caption.startsWith('POLL:\n')) return undefined;
+  const [, question = '', ...rest] = caption.split('\n');
+  const options: NonNullable<Message['poll']>['options'] = [];
+  for (const line of rest) {
+    const m = /^OPTION: (.*) \((\d+) votes?\)$/.exec(line);
+    if (!m) return undefined;
+    options.push({ text: m[1] ?? '', votes: Number(m[2]) });
+  }
+  return options.length ? { question, options } : undefined;
+}
+
+/** A header line whose text (after `Name: `) opens with U+200E and is not a media reference. */
+function isSystemText(rawLine: string, sender: string): boolean {
+  const unmarked = rawLine.replace(/^[‎‏]+/, '');
+  const at = unmarked.indexOf(': ', unmarked.indexOf(']') + 1);
+  if (at < 0) return false;
+  const text = unmarked.slice(at + 2);
+  if (!text.startsWith('‎')) return false;
+  const plain = text.replace(STRIP_MARKS, '');
+  if (/^<attached:|^POLL:|omitted$/i.test(plain)) return false;
+  return sender.length > 0;
 }
 
 async function detect(input: ImportInput): Promise<DetectResult> {

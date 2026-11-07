@@ -25,6 +25,12 @@ export const exportFormatIds = [
   'html',
   'markdown',
   'json',
+  /** WhatsApp's own export zip (`_chat.txt` + media). */
+  'whatsapp-zip',
+  /** The WhatsApp-format zip tuned to Telegram for iPhone/iPad's importer (media included). */
+  'telegram-ios',
+  /** The same zip for Telegram for Android, which imports the text only. */
+  'telegram-android',
 ] as const;
 export const ExportFormatIdSchema = z.enum(exportFormatIds);
 export type ExportFormatId = z.infer<typeof ExportFormatIdSchema>;
@@ -61,4 +67,10 @@ export const FORMAT_META: Record<ExportFormatId, FormatMeta> = {
   html: { id: 'html', label: 'HTML viewer', extension: 'html', mime: 'text/html' },
   markdown: { id: 'markdown', label: 'Markdown', extension: 'md', mime: 'text/markdown' },
   json: { id: 'json', label: 'Canonical JSON', extension: 'json', mime: 'application/json' },
+  'whatsapp-zip': { id: 'whatsapp-zip', label: 'WhatsApp export (.zip)', extension: 'zip', mime: 'application/zip' },
+  'telegram-ios': { id: 'telegram-ios', label: 'Telegram import — iPhone/iPad (.zip)', extension: 'zip', mime: 'application/zip' },
+  'telegram-android': { id: 'telegram-android', label: 'Telegram import — Android (.zip, text only)', extension: 'zip', mime: 'application/zip' },
 };
+
+/** Formats written as a streamed archive with media (`writePackage`), not as one in-memory file. */
+export const packageFormatIds: readonly ExportFormatId[] = ['whatsapp-zip', 'telegram-ios', 'telegram-android'];

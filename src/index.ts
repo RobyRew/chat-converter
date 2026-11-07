@@ -29,6 +29,22 @@ export { instagramImporter, messengerImporter } from './importers/meta';
 export { discordImporter } from './importers/discord';
 export { telegramExporter } from './exporters/telegram';
 export { whatsappExporter } from './exporters/whatsapp';
+export {
+  whatsappZipExporter,
+  telegramIosExporter,
+  telegramAndroidExporter,
+  ANDROID_MAX_HISTORY_BYTES,
+} from './exporters/whatsapp-package';
+export {
+  buildWhatsAppChat,
+  archiveName,
+  guessSelf,
+  sanitizeFileName,
+  neutralizeDocumentName,
+  E2E_NOTICE,
+  type WhatsAppChat,
+  type PlannedMedia,
+} from './exporters/whatsapp-format';
 export { htmlExporter } from './exporters/html';
 export { markdownExporter } from './exporters/markdown';
 export { jsonExporter } from './exporters/json';

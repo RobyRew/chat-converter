@@ -7,6 +7,7 @@ import { jsonExporter } from '../exporters/json';
 import { markdownExporter } from '../exporters/markdown';
 import { telegramExporter } from '../exporters/telegram';
 import { whatsappExporter } from '../exporters/whatsapp';
+import { telegramAndroidExporter, telegramIosExporter, whatsappZipExporter } from '../exporters/whatsapp-package';
 import { Registry } from './registry';
 
 /** A fresh registry with all built-in plugins. Use for custom setups or isolation. */
@@ -21,7 +22,10 @@ export function createRegistry(): Registry {
     .registerExporter(whatsappExporter)
     .registerExporter(htmlExporter)
     .registerExporter(markdownExporter)
-    .registerExporter(jsonExporter);
+    .registerExporter(jsonExporter)
+    .registerExporter(whatsappZipExporter)
+    .registerExporter(telegramIosExporter)
+    .registerExporter(telegramAndroidExporter);
   return r;
 }
 

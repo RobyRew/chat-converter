@@ -251,21 +251,25 @@ function buildAttachment(m: TgMessage, key: string, ctx: ParseContext): Attachme
   return att;
 }
 
-async function pickJson(files: readonly SourceFile[]): Promise<{ root: TgRoot; name: string } | null> {
+async function pickJson(
+  files: readonly SourceFile[],
+): Promise<{ found: { root: TgRoot; name: string } | null; unreadable: string[] }> {
   const jsons = files.filter((f) => /\.json$/i.test(f.path));
   // Telegram Desktop names it result.json; try that first, then any other JSON.
   jsons.sort((a, b) => Number(b.path === 'result.json') - Number(a.path === 'result.json'));
+  const unreadable: string[] = [];
   for (const f of jsons) {
     try {
       const data: unknown = JSON.parse(await readText(f));
       if (data && typeof data === 'object' && Array.isArray((data as TgRoot).messages)) {
-        return { root: data as TgRoot, name: f.path };
+        return { found: { root: data as TgRoot, name: f.path }, unreadable };
       }
     } catch {
-      // not valid JSON — skip
+      // A result.json that does not parse is usually an export Telegram Desktop is still writing.
+      if (f.path === 'result.json') unreadable.push(f.path);
     }
   }
-  return null;
+  return { found: null, unreadable };
 }
 
 const quote = (s: string): string => `“${s}”`;
@@ -519,9 +523,14 @@ export function parseTelegramJson(root: TgRoot, rootName: string, ctx: ParseCont
 }
 
 async function parse(input: ImportInput, ctx: ParseContext): Promise<Conversation> {
-  const found = await pickJson(input.files);
+  const { found, unreadable } = await pickJson(input.files);
   if (found) return parseTelegramJson(found.root, found.name, ctx);
   const pages = findHtmlPages(input.files);
+  if (unreadable.length) {
+    const note = 'result.json could not be read (is Telegram Desktop still exporting?)';
+    if (!pages.length) throw new ConversionError(note, 'INCOMPLETE_EXPORT');
+    ctx.warn(`${note}; the HTML pages were used instead.`);
+  }
   if (pages.length) return parseTelegramHtml(pages, ctx);
   throw new ConversionError('No Telegram export found (result.json or messages.html)', 'NO_CHAT_FILE');
 }
