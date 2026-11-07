@@ -170,3 +170,24 @@ user in a private chat, the time zone of the wall-clock times, whether it reads 
 edit marker). The private-chat notice line is attributed to the other person, as in WhatsApp's own
 exports; a test import settles the rest and is recorded in `docs/formats/telegram-import.md`.
 **Status:** Accepted.
+
+## ADR-0006 — UniversalChat 1.0: one versioned document for any number of conversations (2026-11-07) · Accepted
+**Context:** The owner wants every conversion to go through one universal, versioned format ("UniversalChat"),
+future formats added without breaking it, and ChatForge to adopt it. Account-wide exports (Instagram,
+Messenger, Snapchat, VSCO, Hinge, Telegram full exports) hold many conversations, so the old one-conversation
+shape was not enough. (Two attempts to run a design panel on this did not complete; the design below was made
+directly and is open to revision before ChatForge adopts it.)
+**Decision:**
+- Document `{format: "UniversalChat", version: "1.0.0", generator, createdAt, source, conversations[], ext}`;
+  conversations keep the existing model (schemaVersion 2) plus `selfId`, `ext` and a media manifest with package
+  paths. Package: `universalchat.json` first, media under `media/<conversation index>/<original path>`.
+- Platform data goes under `ext.<platform>` (WhatsApp's round-trip fields moved from loose `meta` keys to
+  `ext.whatsapp`); the source record stays in `message.raw`.
+- Semver: newer major refused; minor = additions; all zod objects are loose so unknown fields survive; unknown
+  list values map to a fallback with the original under `ext.universalchat`.
+- `importArchive()` returns a UniversalChat document; importers of account exports implement `parseArchive`,
+  single-chat importers keep `parse` and are wrapped. `readUniversalChat()` also accepts ChatForge's v1/v2 vault
+  conversations.
+**Rationale:** one shape for single chats and whole accounts, lossless by construction, and evolvable without
+coordinated upgrades of every reader.
+**Status:** Accepted. Spec: `docs/universalchat.md`.

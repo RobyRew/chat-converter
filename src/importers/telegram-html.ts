@@ -81,7 +81,9 @@ function blockText(el: Element): string {
 
 // ---------- rich text ----------
 
-function linkEntity(a: Element, inner: string): Omit<MessageEntity, 'offset' | 'length'> | null {
+type EntityShape = { type: MessageEntity['type']; url?: string; meta?: Record<string, unknown> };
+
+function linkEntity(a: Element, inner: string): EntityShape | null {
   const href = a.attribs['href'] ?? '';
   const onclick = a.attribs['onclick'] ?? '';
   if (/ShowMentionName/.test(onclick)) return { type: 'mention' };
@@ -99,7 +101,7 @@ function linkEntity(a: Element, inner: string): Omit<MessageEntity, 'offset' | '
   return null;
 }
 
-function tagEntity(el: Element, inner: string): Omit<MessageEntity, 'offset' | 'length'> | null {
+function tagEntity(el: Element, inner: string): EntityShape | null {
   switch (el.name) {
     case 'strong':
     case 'b':

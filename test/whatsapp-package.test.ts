@@ -108,7 +108,7 @@ describe('telegram-ios package', () => {
     const { zip } = await pack(conv, source, 'telegram-ios');
     const back = (await importConversation({ name: 'WhatsApp Chat - Sam Rivers.zip', bytes: zip })).conversation;
     expect(back.title).toBe('Sam Rivers');
-    expect(back.messages[0]!.meta?.e2eNotice).toBe(true);
+    expect(back.messages[0]!.ext?.['whatsapp']?.['notice']).toBe(true);
     const rest = back.messages.slice(1);
     expect(rest).toHaveLength(conv.messages.length);
     const name = (c: Conversation, id?: string) => c.participants.find((p) => p.id === id)?.displayName;

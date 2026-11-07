@@ -1,4 +1,4 @@
-import type { CapabilityMatrix, Conversation, ExportFormatId, PlatformId } from '../model';
+import type { CapabilityMatrix, Conversation, ExportFormatId, PlatformId, UniversalChat } from '../model';
 import type { ZipSink } from '../sinks/zip';
 import type { Source, SourceFile } from '../sources/source';
 import type { MediaStore } from './media';
@@ -46,7 +46,13 @@ export interface Importer {
   platform: PlatformId;
   capabilities: CapabilityMatrix;
   detect(input: ImportInput): Promise<DetectResult>;
+  /** The first (or only) conversation of the export. */
   parse(input: ImportInput, ctx: ParseContext): Promise<Conversation>;
+  /**
+   * Every conversation of an account-wide export (Instagram, Messenger, Snapchat…), or a whole UniversalChat
+   * document. Importers of single-chat exports leave it out; the pipeline then uses `parse`.
+   */
+  parseArchive?(input: ImportInput, ctx: ParseContext): Promise<Conversation[] | UniversalChat>;
 }
 
 /** Options for the WhatsApp-format packages (the `whatsapp`, `telegram-ios` and `telegram-android` targets). */

@@ -343,13 +343,15 @@ async function parse(input: ImportInput, ctx: ParseContext): Promise<Conversatio
       msg.editedAt = p.ts;
       msg.meta = { ...msg.meta, editedTimeUnknown: true };
     }
-    msg.meta = {
-      ...msg.meta,
-      waRaw: rawBody,
-      waLead: p.leadMark,
-      waContentText: msg.content?.text ?? '',
-      waStamp: p.stamp,
-      ...(p.rawSender ? { waSender: p.rawSender } : {}),
+    msg.ext = {
+      ...msg.ext,
+      whatsapp: {
+        raw: rawBody,
+        lead: p.leadMark,
+        contentText: msg.content?.text ?? '',
+        stamp: p.stamp,
+        ...(p.rawSender ? { sender: p.rawSender } : {}),
+      },
     };
     return msg;
   };
@@ -403,7 +405,7 @@ async function parse(input: ImportInput, ctx: ParseContext): Promise<Conversatio
   let groupSignals = messages.some((m) => m.kind === 'system' && GROUP_EVENT.test(m.content?.text ?? ''));
   if (first && (E2E_NOTICE.test(first.content?.text ?? '') || (first.kind === 'system' && E2E_WORDS.test(first.content?.text ?? '')))) {
     first.kind = 'system';
-    first.meta = { ...first.meta, e2eNotice: true };
+    first.ext = { ...first.ext, whatsapp: { ...first.ext?.['whatsapp'], notice: true } };
     const noticeSender = first.senderId;
     const person = noticeSender ? participants.get(noticeSender) : undefined;
     if (noticeSender && person) {
@@ -412,7 +414,7 @@ async function parse(input: ImportInput, ctx: ParseContext): Promise<Conversatio
         // A chat name, not a person: it becomes the title and its lines stay as unattributed system lines.
         for (const m of own) {
           delete m.senderId;
-          m.meta = { ...m.meta, attributedTo: person.displayName };
+          m.ext = { ...m.ext, whatsapp: { ...m.ext?.['whatsapp'], attributedTo: person.displayName } };
         }
         participants.delete(noticeSender);
         if (person.displayName !== 'You') {
@@ -433,7 +435,7 @@ async function parse(input: ImportInput, ctx: ParseContext): Promise<Conversatio
     originPlatform: 'whatsapp',
     participants: people,
     messages,
-    meta: { waHeaderStyle: headerStyle ?? 'ios', waEol: eol },
+    ext: { whatsapp: { headerStyle: headerStyle ?? 'ios', eol } },
   };
   if (title) conversation.title = title;
   return conversation;

@@ -9,6 +9,8 @@ import { telegramExporter } from '../exporters/telegram';
 import { whatsappExporter } from '../exporters/whatsapp';
 import { telegramAndroidExporter, telegramIosExporter, whatsappZipExporter } from '../exporters/whatsapp-package';
 import { Registry } from './registry';
+import { universalchatImporter } from '../importers/universalchat';
+import { universalchatExporter, universalchatZipExporter } from '../exporters/universalchat';
 
 /** A fresh registry with all built-in plugins. Use for custom setups or isolation. */
 export function createRegistry(): Registry {
@@ -17,7 +19,8 @@ export function createRegistry(): Registry {
     .registerImporter(telegramImporter)
     .registerImporter(instagramImporter)
     .registerImporter(messengerImporter)
-    .registerImporter(discordImporter);
+    .registerImporter(discordImporter)
+    .registerImporter(universalchatImporter);
   r.registerExporter(telegramExporter)
     .registerExporter(whatsappExporter)
     .registerExporter(htmlExporter)
@@ -25,7 +28,9 @@ export function createRegistry(): Registry {
     .registerExporter(jsonExporter)
     .registerExporter(whatsappZipExporter)
     .registerExporter(telegramIosExporter)
-    .registerExporter(telegramAndroidExporter);
+    .registerExporter(telegramAndroidExporter)
+    .registerExporter(universalchatExporter)
+    .registerExporter(universalchatZipExporter);
   return r;
 }
 

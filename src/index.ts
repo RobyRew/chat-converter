@@ -49,3 +49,5 @@ export {
 export { htmlExporter } from './exporters/html';
 export { markdownExporter } from './exporters/markdown';
 export { jsonExporter } from './exporters/json';
+export { universalchatExporter, universalchatZipExporter, writeUniversalChatPackage, packagePath } from './exporters/universalchat';
+export { universalchatImporter } from './importers/universalchat';

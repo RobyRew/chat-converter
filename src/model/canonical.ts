@@ -37,13 +37,13 @@ export const MessageEntitySchema = z.object({
   /** For `pre` (code block) entities. */
   language: z.string().optional(),
   meta: z.record(z.string(), z.unknown()).optional(),
-});
+}).loose();
 export type MessageEntity = z.infer<typeof MessageEntitySchema>;
 
 export const RichTextSchema = z.object({
   text: z.string(),
   entities: z.array(MessageEntitySchema).default([]),
-});
+}).loose();
 export type RichText = z.infer<typeof RichTextSchema>;
 
 export const attachmentKinds = [
@@ -98,7 +98,9 @@ export const AttachmentSchema = z.object({
   caption: RichTextSchema.optional(),
   thumbnailRef: z.string().optional(),
   meta: z.record(z.string(), z.unknown()).optional(),
-});
+  /** Platform-specific data under one key per namespace (`whatsapp`, `telegram`, `instagram`, …). */
+  ext: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
+}).loose();
 export type Attachment = z.infer<typeof AttachmentSchema>;
 
 export const ReactionSchema = z.object({
@@ -106,7 +108,7 @@ export const ReactionSchema = z.object({
   senderId: z.string().optional(),
   count: z.number().int().positive().optional(),
   ts: z.number().int().optional(),
-});
+}).loose();
 export type Reaction = z.infer<typeof ReactionSchema>;
 
 export const ParticipantSchema = z.object({
@@ -117,7 +119,9 @@ export const ParticipantSchema = z.object({
   handles: z.array(z.string()).optional(),
   avatarRef: z.string().optional(),
   meta: z.record(z.string(), z.unknown()).optional(),
-});
+  /** Platform-specific data under one key per namespace (`whatsapp`, `telegram`, `instagram`, …). */
+  ext: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
+}).loose();
 export type Participant = z.infer<typeof ParticipantSchema>;
 
 export const ForwardInfoSchema = z.object({
@@ -126,7 +130,7 @@ export const ForwardInfoSchema = z.object({
   /** Platform handle of the original sender (e.g. Telegram `user123`). */
   handle: z.string().optional(),
   ts: z.number().int().optional(),
-});
+}).loose();
 export type ForwardInfo = z.infer<typeof ForwardInfoSchema>;
 
 export const messageKinds = [
@@ -155,13 +159,13 @@ export const PollSchema = z.object({
   totalVoters: z.number().int().nonnegative().optional(),
   closed: z.boolean().optional(),
   anonymous: z.boolean().optional(),
-});
+}).loose();
 export type Poll = z.infer<typeof PollSchema>;
 
 export const ChecklistSchema = z.object({
   title: z.string(),
   items: z.array(z.object({ id: z.number().int().optional(), text: z.string(), done: z.boolean().optional() })),
-});
+}).loose();
 export type Checklist = z.infer<typeof ChecklistSchema>;
 
 export const LocationSchema = z.object({
@@ -172,7 +176,7 @@ export const LocationSchema = z.object({
   /** Set for live locations: how long the location was shared. */
   livePeriodSec: z.number().nonnegative().optional(),
   live: z.boolean().optional(),
-});
+}).loose();
 export type LocationInfo = z.infer<typeof LocationSchema>;
 
 export const ContactSchema = z.object({
@@ -181,7 +185,7 @@ export const ContactSchema = z.object({
   phone: z.string().optional(),
   /** Path of the vCard file inside the export, when it was exported. */
   vcardRef: z.string().optional(),
-});
+}).loose();
 export type Contact = z.infer<typeof ContactSchema>;
 
 export const CallSchema = z.object({
@@ -191,14 +195,14 @@ export const CallSchema = z.object({
   /** Status text as the export wrote it (e.g. "Incoming (51 seconds)", "Cancelled"). */
   label: z.string().optional(),
   video: z.boolean().optional(),
-});
+}).loose();
 export type Call = z.infer<typeof CallSchema>;
 
 export const ServiceSchema = z.object({
   /** Platform action name, e.g. Telegram `pin_message`, `take_screenshot`, `todo_completions`. */
   action: z.string(),
   data: z.record(z.string(), z.unknown()).optional(),
-});
+}).loose();
 export type Service = z.infer<typeof ServiceSchema>;
 
 export const MessageSchema = z.object({
@@ -226,18 +230,24 @@ export const MessageSchema = z.object({
   /** Bot through which an inline result was sent (`@gif`). */
   viaBot: z.string().optional(),
   meta: z.record(z.string(), z.unknown()).optional(),
+  /** Platform-specific data under one key per namespace (`whatsapp`, `telegram`, `instagram`, …). */
+  ext: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
   /** Original platform payload, preserved verbatim for round-trip fidelity. */
   raw: z.unknown().optional(),
-});
+}).loose();
 export type Message = z.infer<typeof MessageSchema>;
 
 /** Manifest entry describing a media file referenced by the conversation. */
 export const MediaItemSchema = z.object({
+  /** The attachment `ref` (path in the original export). */
   ref: z.string(),
+  /** Path inside a UniversalChat package, when the file is in one. */
+  path: z.string().optional(),
   mimeType: z.string().optional(),
   size: z.number().int().nonnegative().optional(),
+  sha256: z.string().optional(),
   present: z.boolean().default(true),
-});
+}).loose();
 export type MediaItem = z.infer<typeof MediaItemSchema>;
 
 export const conversationKinds = ['dm', 'group', 'channel'] as const;
@@ -248,11 +258,15 @@ export const ConversationSchema = z.object({
   kind: z.enum(conversationKinds).default('dm'),
   title: z.string().optional(),
   originPlatform: PlatformIdSchema,
+  /** The participant who made the export (the account owner), when the export says so. */
+  selfId: z.string().optional(),
   participants: z.array(ParticipantSchema).default([]),
   messages: z.array(MessageSchema).default([]),
   media: z.array(MediaItemSchema).optional(),
   meta: z.record(z.string(), z.unknown()).optional(),
-});
+  /** Platform-specific data under one key per namespace (`whatsapp`, `telegram`, `instagram`, …). */
+  ext: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
+}).loose();
 export type Conversation = z.infer<typeof ConversationSchema>;
 
 /**
