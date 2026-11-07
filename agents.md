@@ -110,3 +110,33 @@ exporter carried media, so neither folders nor media-complete output were possib
 **Rationale:** zip.js reads lazily, writes streams, handles Zip64, and runs unchanged in browsers,
 workers and Node. One zip library instead of two.
 **Status:** Accepted.
+
+## ADR-0003 — Canonical model v2: structured events and omitted media (2026-11-07) · Accepted
+**Supersedes CF-ADR-0016.**
+**Context:** Writing Telegram's import package needs polls, checklists, locations, contacts, calls and
+service events as data, not as pre-rendered text, and needs to know *why* a file is absent.
+**Decision:** `SCHEMA_VERSION = 2`. Messages gain optional `poll`, `checklist`, `location`, `contact`,
+`call`, `service`, `viaBot`; attachments gain `present`, `omitted` (`not_included` | `too_large` |
+`unavailable` | `missing`), `stickerFormat`, `emoji`, `round`, `spoiler`, `selfDestructSec`; forwards gain
+`handle`; `messageKinds` gains `checklist`. Readable fallback `content` is still filled for formats
+without these types. Every v1 document is a valid v2 document; `upgradeConversation()` validates and
+stamps the version (ChatForge Vault items are v1).
+**Status:** Accepted.
+
+## ADR-0004 — Telegram HTML export as a first-class input; wall-clock times use an IANA zone (2026-11-07) · Accepted
+**Context:** A real 32,405-message chat exported three ways (HTML only, JSON only, both + media) holds
+the same message ids in the same order in HTML and JSON, so the HTML export loses no message. Its date
+tooltip (`28.04.2023 19:24:27 UTC+00:00`) carries the export machine's *standard* offset on every
+message, including summer ones that were really UTC+1, and it has no sender ids, unix times or edit
+marks; service lines have no time at all.
+**Decision:** The Telegram importer reads `result.json` when present and otherwise parses
+`messages*.html` in page order with htmlparser2 (workers have no DOMParser). Wall-clock times are
+converted with `ParseContext.timeZone` (default: the converting machine's zone); the offset label is
+ignored and only recorded. In an hour repeated by a DST change the earliest instant is used. HTML
+service lines take the previous message's time (`meta.htmlTimeInferred`). A document sent "as file"
+stays kind `file` whatever its MIME type, matching how the HTML shows it.
+**Rationale:** Measured on the real export with zone Europe/London: HTML and JSON agree on kind,
+sender, time to the second, text, entities, attachments, replies, forwards, reactions and call
+durations for all non-service messages; the synthetic fixture under `test/fixtures/telegram-export`
+pins the same parity in CI without personal data.
+**Status:** Accepted.

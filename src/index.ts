@@ -16,12 +16,15 @@ export * from './engine/zip';
 export * from './engine/richtext';
 export * from './engine/format';
 export * from './engine/transforms';
+export * from './engine/time';
 export * from './worker/types';
 export { createRegistry, defaultRegistry } from './engine/builtins';
 
 // Built-in plugin instances (for custom registries / advanced consumers)
 export { whatsappImporter } from './importers/whatsapp';
-export { telegramImporter } from './importers/telegram';
+export { telegramImporter, parseTelegramJson } from './importers/telegram';
+export { parseTelegramHtml, findHtmlPages } from './importers/telegram-html';
+export { DELETED_ACCOUNT } from './importers/telegram-common';
 export { instagramImporter, messengerImporter } from './importers/meta';
 export { discordImporter } from './importers/discord';
 export { telegramExporter } from './exporters/telegram';

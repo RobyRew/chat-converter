@@ -1,0 +1,404 @@
+{
+ "name": null,
+ "type": "personal_chat",
+ "id": 9000,
+ "messages": [
+  {
+   "id": 1001,
+   "type": "message",
+   "date": "2024-07-14T11:00:00",
+   "date_unixtime": "1720951200",
+   "from": null,
+   "from_id": "user9000",
+   "text": "Hola 👋",
+   "text_entities": [
+    {
+     "type": "plain",
+     "text": "Hola 👋"
+    }
+   ]
+  },
+  {
+   "id": 1002,
+   "type": "message",
+   "date": "2024-07-14T11:00:05",
+   "date_unixtime": "1720951205",
+   "from": "Cosmin Calin",
+   "from_id": "user1",
+   "photo": "photos/photo_1@14-07-2024_10-00-05.jpg",
+   "photo_file_size": 23,
+   "width": 800,
+   "height": 600,
+   "text": [
+    "mira ",
+    {
+     "type": "bold",
+     "text": "esto"
+    }
+   ],
+   "text_entities": [
+    {
+     "type": "plain",
+     "text": "mira "
+    },
+    {
+     "type": "bold",
+     "text": "esto"
+    }
+   ]
+  },
+  {
+   "id": 1003,
+   "type": "message",
+   "date": "2024-07-14T11:01:00",
+   "date_unixtime": "1720951260",
+   "from": null,
+   "from_id": "user9000",
+   "file": "voice_messages/audio_1@14-07-2024_10-01-00.ogg",
+   "file_size": 20,
+   "media_type": "voice_message",
+   "mime_type": "audio/ogg",
+   "duration_seconds": 7,
+   "text": "",
+   "text_entities": []
+  },
+  {
+   "id": 1004,
+   "type": "message",
+   "date": "2024-07-14T11:02:00",
+   "date_unixtime": "1720951320",
+   "from": "Cosmin Calin",
+   "from_id": "user1",
+   "file": "stickers/sticker.webp",
+   "file_size": 25,
+   "media_type": "sticker",
+   "sticker_emoji": "😀",
+   "mime_type": "image/webp",
+   "width": 512,
+   "height": 512,
+   "text": "",
+   "text_entities": []
+  },
+  {
+   "id": 1005,
+   "type": "message",
+   "date": "2024-07-14T11:03:00",
+   "date_unixtime": "1720951380",
+   "from": null,
+   "from_id": "user9000",
+   "file": "stickers/AnimatedSticker.tgs",
+   "file_size": 16,
+   "media_type": "sticker",
+   "sticker_emoji": "🚙",
+   "mime_type": "application/x-tgsticker",
+   "width": 512,
+   "height": 512,
+   "text": "",
+   "text_entities": []
+  },
+  {
+   "id": 1006,
+   "type": "message",
+   "date": "2024-07-14T11:04:00",
+   "date_unixtime": "1720951440",
+   "from": "Cosmin Calin",
+   "from_id": "user1",
+   "file": "(File not included. Change data exporting settings to download.)",
+   "file_size": 1048576,
+   "thumbnail": "(File not included. Change data exporting settings to download.)",
+   "media_type": "video_file",
+   "mime_type": "video/mp4",
+   "duration_seconds": 198,
+   "width": 1280,
+   "height": 720,
+   "text": "video caption",
+   "text_entities": [
+    {
+     "type": "plain",
+     "text": "video caption"
+    }
+   ]
+  },
+  {
+   "id": 1007,
+   "type": "message",
+   "date": "2024-07-14T11:05:00",
+   "date_unixtime": "1720951500",
+   "from": null,
+   "from_id": "user9000",
+   "file": "video_files/IMG_0001.MOV",
+   "file_size": 13,
+   "media_type": "animation",
+   "mime_type": "video/mp4",
+   "duration_seconds": 3,
+   "text": "",
+   "text_entities": []
+  },
+  {
+   "id": 1008,
+   "type": "service",
+   "date": "2024-07-14T11:06:00",
+   "date_unixtime": "1720951560",
+   "actor": null,
+   "actor_id": "user9000",
+   "action": "phone_call",
+   "duration_seconds": 51,
+   "discard_reason": "hangup",
+   "text": "",
+   "text_entities": []
+  },
+  {
+   "id": 1009,
+   "type": "message",
+   "date": "2024-07-14T11:07:00",
+   "date_unixtime": "1720951620",
+   "from": "Cosmin Calin",
+   "from_id": "user1",
+   "location_information": {
+    "latitude": 41.3851,
+    "longitude": 2.1734
+   },
+   "text": "",
+   "text_entities": []
+  },
+  {
+   "id": 1010,
+   "type": "message",
+   "date": "2024-07-14T11:08:00",
+   "date_unixtime": "1720951680",
+   "from": "Cosmin Calin",
+   "from_id": "user1",
+   "contact_information": {
+    "first_name": "Ana",
+    "last_name": "Pop",
+    "phone_number": "+40 700 000 000"
+   },
+   "contact_vcard": "contacts/contact_1.vcard",
+   "contact_vcard_file_size": 60,
+   "text": "",
+   "text_entities": []
+  },
+  {
+   "id": 1011,
+   "type": "message",
+   "date": "2024-07-14T11:09:00",
+   "date_unixtime": "1720951740",
+   "from": "Cosmin Calin",
+   "from_id": "user1",
+   "poll": {
+    "question": "¿Vamos?",
+    "closed": false,
+    "total_voters": 2,
+    "answers": [
+     {
+      "text": "Sí",
+      "voters": 2,
+      "chosen": true
+     },
+     {
+      "text": "No",
+      "voters": 0,
+      "chosen": false
+     }
+    ]
+   },
+   "text": "",
+   "text_entities": []
+  },
+  {
+   "id": 1012,
+   "type": "message",
+   "date": "2024-07-14T11:10:00",
+   "date_unixtime": "1720951800",
+   "from": "Cosmin Calin",
+   "from_id": "user1",
+   "todo_list": {
+    "title": "Lista",
+    "others_can_append": true,
+    "others_can_complete": true,
+    "answers": [
+     {
+      "text": "Pan",
+      "id": 1
+     },
+     {
+      "text": "Leche",
+      "id": 2
+     }
+    ]
+   },
+   "text": "",
+   "text_entities": []
+  },
+  {
+   "id": 1013,
+   "type": "service",
+   "date": "2024-07-14T11:11:00",
+   "date_unixtime": "1720951860",
+   "actor": "Cosmin Calin",
+   "actor_id": "user1",
+   "action": "todo_completions",
+   "message_id": 1012,
+   "completed": [
+    1
+   ],
+   "incompleted": [],
+   "text": "",
+   "text_entities": []
+  },
+  {
+   "id": 1014,
+   "type": "message",
+   "date": "2024-07-14T11:12:00",
+   "date_unixtime": "1720951920",
+   "from": null,
+   "from_id": "user9000",
+   "edited": "2024-07-14T11:13:00",
+   "edited_unixtime": "1720951980",
+   "reply_to_message_id": 1002,
+   "text": "line one\nline two",
+   "text_entities": [
+    {
+     "type": "plain",
+     "text": "line one\nline two"
+    }
+   ],
+   "reactions": [
+    {
+     "type": "emoji",
+     "count": 1,
+     "emoji": "❤",
+     "recent": [
+      {
+       "from": "Cosmin Calin",
+       "from_id": "user1",
+       "date": "2024-07-14T11:12:30"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": 1015,
+   "type": "message",
+   "date": "2024-07-14T11:13:00",
+   "date_unixtime": "1720951980",
+   "from": "Cosmin Calin",
+   "from_id": "user1",
+   "forwarded_from": "Ana Pop",
+   "forwarded_from_id": "user77",
+   "text": "fwd text",
+   "text_entities": [
+    {
+     "type": "plain",
+     "text": "fwd text"
+    }
+   ]
+  },
+  {
+   "id": 1016,
+   "type": "service",
+   "date": "2024-07-14T11:14:00",
+   "date_unixtime": "1720952040",
+   "actor": "Cosmin Calin",
+   "actor_id": "user1",
+   "action": "pin_message",
+   "message_id": 1014,
+   "text": "",
+   "text_entities": []
+  },
+  {
+   "id": 1017,
+   "type": "message",
+   "date": "2024-07-14T11:15:00",
+   "date_unixtime": "1720952100",
+   "from": "Cosmin Calin",
+   "from_id": "user1",
+   "via_bot": "@gif",
+   "file": "(File not included. Change data exporting settings to download.)",
+   "file_size": 54000,
+   "thumbnail": "(File not included. Change data exporting settings to download.)",
+   "media_type": "animation",
+   "mime_type": "video/mp4",
+   "text": "",
+   "text_entities": []
+  },
+  {
+   "id": 1018,
+   "type": "message",
+   "date": "2024-07-14T11:16:00",
+   "date_unixtime": "1720952160",
+   "from": null,
+   "from_id": "user9000",
+   "photo": "(File unavailable, please try again later)",
+   "self_destruct_period_seconds": 10,
+   "text": "",
+   "text_entities": []
+  },
+  {
+   "id": 1019,
+   "type": "message",
+   "date": "2024-07-14T11:17:00",
+   "date_unixtime": "1720952220",
+   "from": "Cosmin Calin",
+   "from_id": "user1",
+   "text": [
+    {
+     "type": "custom_emoji",
+     "text": "🤣",
+     "document_id": "stickers/AnimatedSticker.tgs"
+    },
+    " jaja ",
+    {
+     "type": "spoiler",
+     "text": "secreto"
+    }
+   ],
+   "text_entities": [
+    {
+     "type": "custom_emoji",
+     "text": "🤣",
+     "document_id": "stickers/AnimatedSticker.tgs"
+    },
+    {
+     "type": "plain",
+     "text": " jaja "
+    },
+    {
+     "type": "spoiler",
+     "text": "secreto"
+    }
+   ]
+  },
+  {
+   "id": 1020,
+   "type": "message",
+   "date": "2024-07-14T11:18:00",
+   "date_unixtime": "1720952280",
+   "from": null,
+   "from_id": "user9000",
+   "text": "[01/01/2020, 10:00:00] not a header",
+   "text_entities": [
+    {
+     "type": "plain",
+     "text": "[01/01/2020, 10:00:00] not a header"
+    }
+   ]
+  },
+  {
+   "id": 1021,
+   "type": "message",
+   "date": "2024-12-01T12:00:00",
+   "date_unixtime": "1733054400",
+   "from": "Cosmin Calin",
+   "from_id": "user1",
+   "text": "invierno",
+   "text_entities": [
+    {
+     "type": "plain",
+     "text": "invierno"
+    }
+   ]
+  }
+ ]
+}
