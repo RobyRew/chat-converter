@@ -14,7 +14,7 @@ import {
 const stubCaps: CapabilityMatrix = {};
 
 function neverDetect(platform: Importer['platform']) {
-  return (_input: ImportInput): DetectResult => ({ platform, confidence: 0, reason: 'stub' });
+  return async (_input: ImportInput): Promise<DetectResult> => ({ platform, confidence: 0, reason: 'stub' });
 }
 
 function notImplemented(label: string) {

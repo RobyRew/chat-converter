@@ -85,3 +85,28 @@ exporting raw TS. The web app lives in `web/` with its own `package.json` and de
 **Rationale:** One project, one repo; a fork of this repo is a complete, working converter, and a
 fork of ChatForge resolves this package from its public tag.
 **Status:** Accepted.
+
+## ADR-0002 — Lazy sources and streamed archives with zip.js (2026-11-07) · Accepted
+**Supersedes CF-ADR-0012 for archives.**
+**Context:** A Telegram Desktop export is a folder: `result.json` and/or `messages*.html` plus
+`photos/`, `video_files/`, `voice_messages/`… A real one used to design this is 506 MB with 2,286 media
+files (more with every media type ticked; Telegram's per-file limit is 4000 MiB). The ChatForge engine
+took one `Uint8Array` and inflated every zip entry into memory with fflate's `unzipSync`, and no
+exporter carried media, so neither folders nor media-complete output were possible.
+**Decision:**
+- Inputs are a `Source` of `SourceFile`s (`path`, `size`, `bytes()`, `head(n)`, `stream()`). Builders
+  cover dropped folders / file inputs (browser `File` handles), zips (zip.js `ZipReader` over a
+  `BlobReader`: only the central directory is read up front), in-memory bytes, and Node folders
+  (`fs.openAsBlob`, disk-backed). Junk (`.DS_Store`, `__MACOSX/`, AppleDouble) is dropped; folders shared
+  by every file are stripped; several dropped exports become several sources.
+- Importers read only chat files; `MediaStore` indexes `SourceFile` handles by path; `detect` is async.
+- Package outputs stream through `ZipSink` (zip.js `ZipWriter`) into any `WritableStream`: a file
+  picked with the File System Access API, an OPFS file (sync access handle, which Safari supports in
+  workers), a Node file, or memory. Media is stored (level 0), text deflated. Every name carries the
+  UTF-8 flag (bit 11); a known size keeps entries out of Zip64 below 4 GB.
+- Zip entry names without the UTF-8 flag are decoded as UTF-8 when the bytes are valid UTF-8, else CP437.
+  WhatsApp writes UTF-8 names without the flag (its contact cards carry U+200E).
+- fflate is removed; `strToU8`/`strFromU8` are `TextEncoder`/`TextDecoder`, `zipFiles()` is async.
+**Rationale:** zip.js reads lazily, writes streams, handles Zip64, and runs unchanged in browsers,
+workers and Node. One zip library instead of two.
+**Status:** Accepted.

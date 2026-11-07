@@ -1,12 +1,9 @@
-import type {
-  CapabilityMatrix,
-  Conversation,
-  ExportFormatId,
-  PlatformId,
-} from '../model';
+import type { CapabilityMatrix, Conversation, ExportFormatId, PlatformId } from '../model';
+import type { ZipSink } from '../sinks/zip';
+import type { Source, SourceFile } from '../sources/source';
 import type { MediaStore } from './media';
 
-/** A raw input file (already extracted from any archive). */
+/** A raw input file held in memory. A zip is opened as an archive. */
 export interface InputFile {
   name: string;
   bytes: Uint8Array;
@@ -18,9 +15,10 @@ export interface OutputFile {
   bytes: Uint8Array;
 }
 
-/** Expanded import payload handed to importers (a zip is pre-unpacked into `files`). */
+/** What an importer sees: the files of one export, read lazily. */
 export interface ImportInput {
-  files: InputFile[];
+  source: Source;
+  files: readonly SourceFile[];
   hint?: PlatformId;
 }
 
@@ -32,28 +30,57 @@ export interface DetectResult {
 }
 
 export interface ParseContext {
+  /** Every file of the export, keyed by path — importers check which referenced media exist. */
   media: MediaStore;
   warn: (message: string) => void;
   hint?: PlatformId;
+  /** IANA zone used where a format only has local wall-clock times (e.g. Telegram's HTML export). */
+  timeZone?: string;
 }
 
 /**
- * Turns one platform's export into the canonical model. Adding a platform = adding one
- * file that implements this interface and registering it (see `registry.ts`).
+ * Turns one platform's export into the canonical model. Adding a platform = adding one file that
+ * implements this interface and registering it (see `registry.ts`).
  */
 export interface Importer {
   platform: PlatformId;
   capabilities: CapabilityMatrix;
-  detect(input: ImportInput): DetectResult;
+  detect(input: ImportInput): Promise<DetectResult>;
   parse(input: ImportInput, ctx: ParseContext): Promise<Conversation>;
+}
+
+/** Options for the WhatsApp-format packages (the `whatsapp`, `telegram-ios` and `telegram-android` targets). */
+export interface WhatsAppPackageOptions {
+  /** `dm` writes a private-chat export, `group` a group export. Defaults to the conversation kind. */
+  mode?: 'dm' | 'group';
+  /** Participant id written as the exporting user. Defaults to the most active participant who is not the peer. */
+  selfId?: string;
+  /** IANA zone for the written wall-clock times when a message carries no original offset. */
+  timeZone?: string;
+  /** Write calls, pins and other service events as text lines. Default true. */
+  serviceAsText?: boolean;
+  /** Write `‎image omitted`-style markers for media the export did not include. Default true. */
+  omittedMarkers?: boolean;
+  /** Prefix replies with a quote of the message they answer. Default false (WhatsApp exports have none). */
+  replyQuotes?: boolean;
+  /** Prefix forwarded messages with `Forwarded from <name>:`. Default false. */
+  forwardLabels?: boolean;
+  /** Append WhatsApp's `<This message was edited>` marker. Default false. */
+  editedMarker?: boolean;
+  /** Animated (`.tgs`) and video (`.webm`) stickers: `omit` writes `sticker omitted`, `file` attaches them as files. */
+  animatedStickers?: 'omit' | 'file';
+  /** Write the end-to-end-encryption notice line WhatsApp puts first. Default true. */
+  noticeLine?: boolean;
 }
 
 export interface ExportOptions {
   includeMedia?: boolean;
   title?: string;
+  whatsapp?: WhatsAppPackageOptions;
 }
 
 export interface ExportContext {
+  /** Files of the source export (media is streamed from here by package exporters). */
   media: MediaStore;
   warn: (message: string) => void;
 }
@@ -65,6 +92,26 @@ export interface ExportArtifact {
   mime: string;
 }
 
+export interface PackageContext extends ExportContext {
+  sink: ZipSink;
+}
+
+/** What a package exporter wrote, for the message/media invariants shown to the user. */
+export interface PackageSummary {
+  /** Suggested archive file name, e.g. `WhatsApp Chat - Sam Rivers.zip`. */
+  suggestedName: string;
+  messagesIn: number;
+  messagesOut: number;
+  mediaWritten: number;
+  mediaOmitted: number;
+  /** Archive entry names in write order. */
+  entries: string[];
+  /** Per-feature counts of what the target cannot carry (e.g. `reactions: 1372`). */
+  dropped: Record<string, number>;
+  /** Per-feature counts of what was rewritten to fit the target (e.g. `animatedStickers: 20`). */
+  approximated: Record<string, number>;
+}
+
 export interface Exporter {
   format: ExportFormatId;
   capabilities: CapabilityMatrix;
@@ -73,7 +120,10 @@ export interface Exporter {
    * reported as `approximated` rather than `dropped`.
    */
   approximates?: CapabilityMatrix;
+  /** In-memory output (text formats; for package formats, the chat text alone). */
   serialize(conv: Conversation, ctx: ExportContext, opts?: ExportOptions): Promise<ExportArtifact>;
+  /** Streams a complete package (chat text + media) into an archive. Only package formats have it. */
+  write?(conv: Conversation, ctx: PackageContext, opts?: ExportOptions): Promise<PackageSummary>;
 }
 
 export class ConversionError extends Error {

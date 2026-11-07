@@ -13,7 +13,7 @@ const stubCaps: CapabilityMatrix = {};
 export const discordImporter: Importer = {
   platform: 'discord',
   capabilities: stubCaps,
-  detect: (_input: ImportInput): DetectResult => ({ platform: 'discord', confidence: 0, reason: 'stub' }),
+  detect: async (_input: ImportInput): Promise<DetectResult> => ({ platform: 'discord', confidence: 0, reason: 'stub' }),
   parse: async (_input: ImportInput, _ctx: ParseContext): Promise<Conversation> => {
     throw new ConversionError('Discord importer is scaffolded but not implemented yet', 'NOT_IMPLEMENTED');
   },

@@ -1,16 +1,22 @@
+import type { SourceFile } from '../sources/source';
+
 /**
- * Holds media bytes referenced by a conversation, keyed by `ref` (usually the file name
- * inside the source archive). Isomorphic: an in-memory map works in browser and Node.
- * A future enhancement can back this with OPFS/IndexedDB (browser) or tmpfs (server sandbox).
+ * Index of the files in an export, keyed by path relative to the export root (the same string a
+ * conversation stores in `Attachment.ref`). Holds handles, never bytes: a file is read only when an
+ * exporter streams it.
  */
 export class MediaStore {
-  private readonly map = new Map<string, Uint8Array>();
+  private readonly map = new Map<string, SourceFile>();
 
-  set(ref: string, bytes: Uint8Array): void {
-    this.map.set(ref, bytes);
+  constructor(files: Iterable<SourceFile> = []) {
+    for (const f of files) this.map.set(f.path, f);
   }
 
-  get(ref: string): Uint8Array | undefined {
+  set(file: SourceFile): void {
+    this.map.set(file.path, file);
+  }
+
+  get(ref: string): SourceFile | undefined {
     return this.map.get(ref);
   }
 

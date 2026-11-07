@@ -13,11 +13,10 @@ import {
   type DetectResult,
   type Importer,
   type ImportInput,
-  type InputFile,
   type ParseContext,
 } from '../engine/contracts';
 import { attachmentId, conversationId, messageId, participantId } from '../engine/ids';
-import { strFromU8 } from '../engine/zip';
+import { readHeadText, readText, type SourceFile } from '../sources/source';
 
 type TgText = string | Array<string | TgPart>;
 interface TgPart {
@@ -188,13 +187,15 @@ function buildAttachment(m: TgMessage, key: string): Attachment | undefined {
   return att;
 }
 
-function pickJson(files: InputFile[]): { root: TgRoot; name: string } | null {
-  for (const f of files) {
-    if (!/\.json$/i.test(f.name)) continue;
+async function pickJson(files: readonly SourceFile[]): Promise<{ root: TgRoot; name: string } | null> {
+  const jsons = files.filter((f) => /\.json$/i.test(f.path));
+  // Telegram Desktop names it result.json; try that first, then any other JSON.
+  jsons.sort((a, b) => Number(b.path === 'result.json') - Number(a.path === 'result.json'));
+  for (const f of jsons) {
     try {
-      const data: unknown = JSON.parse(strFromU8(f.bytes));
+      const data: unknown = JSON.parse(await readText(f));
       if (data && typeof data === 'object' && Array.isArray((data as TgRoot).messages)) {
-        return { root: data as TgRoot, name: f.name };
+        return { root: data as TgRoot, name: f.path };
       }
     } catch {
       // not valid JSON — skip
@@ -252,7 +253,7 @@ const telegramCaps: CapabilityMatrix = {
 };
 
 async function parse(input: ImportInput, _ctx: ParseContext): Promise<Conversation> {
-  const found = pickJson(input.files);
+  const found = await pickJson(input.files);
   if (!found) {
     throw new ConversionError('No Telegram export JSON (with a "messages" array) found', 'NO_CHAT_FILE');
   }
@@ -351,15 +352,15 @@ async function parse(input: ImportInput, _ctx: ParseContext): Promise<Conversati
   return conversation;
 }
 
-function detect(input: ImportInput): DetectResult {
+async function detect(input: ImportInput): Promise<DetectResult> {
   for (const f of input.files) {
-    if (!/\.json$/i.test(f.name)) continue;
-    const head = strFromU8(f.bytes.slice(0, 4096));
+    if (!/\.json$/i.test(f.path)) continue;
+    const head = await readHeadText(f, 4096);
     if (/"messages"\s*:/.test(head)) {
       if (/("date_unixtime"|"text_entities"|"from_id"|"personal_chat"|"saved_messages")/.test(head)) {
-        return { platform: 'telegram', confidence: 0.95, reason: `telegram json: ${f.name}` };
+        return { platform: 'telegram', confidence: 0.95, reason: `telegram json: ${f.path}` };
       }
-      return { platform: 'telegram', confidence: 0.5, reason: `json with messages: ${f.name}` };
+      return { platform: 'telegram', confidence: 0.5, reason: `json with messages: ${f.path}` };
     }
   }
   return { platform: 'telegram', confidence: 0 };

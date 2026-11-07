@@ -1,6 +1,10 @@
 // Canonical model (zod schemas + types)
 export * from './model/index';
 
+// Lazy inputs (folders, zips, in-memory files) and streaming archive output
+export * from './sources/index';
+export * from './sinks/index';
+
 // Engine primitives
 export * from './engine/contracts';
 export * from './engine/registry';

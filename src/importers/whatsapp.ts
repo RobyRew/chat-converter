@@ -4,12 +4,11 @@ import {
   type DetectResult,
   type Importer,
   type ImportInput,
-  type InputFile,
   type ParseContext,
 } from '../engine/contracts';
 import { attachmentId, conversationId, messageId, participantId } from '../engine/ids';
 import { parseWhatsAppMarkup } from '../engine/richtext';
-import { strFromU8 } from '../engine/zip';
+import { baseName, readHeadText, readText, type SourceFile } from '../sources/source';
 
 /** Bidirectional/format marks WhatsApp sprinkles into exports — stripped before parsing. */
 const STRIP_MARKS = /[‎‏‪-‮﻿]/g;
@@ -152,16 +151,23 @@ function looksLikePhone(s: string): boolean {
   return /^\+?[\d\s().-]{6,}$/.test(s);
 }
 
-function pickChatFile(files: InputFile[]): InputFile | undefined {
-  const txts = files.filter((f) => f.name.toLowerCase().endsWith('.txt'));
-  return txts.find((f) => /(_chat|whatsapp)/i.test(f.name)) ?? txts[0];
+function pickChatFile(files: readonly SourceFile[]): SourceFile | undefined {
+  const txts = files.filter((f) => f.path.toLowerCase().endsWith('.txt'));
+  return txts.find((f) => /(_chat|whatsapp)/i.test(baseName(f.path))) ?? txts[0];
 }
 
-function chatTitleFromName(name: string): string | undefined {
-  const base = name.split('/').pop() ?? name;
+/**
+ * Chat title from the file name (`WhatsApp Chat with X.txt`, Android) or, for iOS's `_chat.txt`,
+ * from the archive/folder name (`WhatsApp Chat - X.zip`).
+ */
+function chatTitle(path: string, sourceName: string): string | undefined {
+  const base = baseName(path);
   const m = /WhatsApp Chat (?:with|-)\s*(.+)\.txt$/i.exec(base);
   if (m) return m[1]!.trim();
-  if (/_chat\.txt$/i.test(base)) return undefined;
+  if (/_chat\.txt$/i.test(base)) {
+    const z = /^WhatsApp Chat (?:with|-)\s*(.+)$/i.exec(sourceName);
+    return z ? z[1]!.trim() : undefined;
+  }
   return base.replace(/\.txt$/i, '') || undefined;
 }
 
@@ -180,7 +186,7 @@ async function parse(input: ImportInput, ctx: ParseContext): Promise<Conversatio
   const chatFile = pickChatFile(input.files);
   if (!chatFile) throw new ConversionError('No WhatsApp .txt chat file found', 'NO_CHAT_FILE');
 
-  const raw = strFromU8(chatFile.bytes).replace(/\r\n?/g, '\n').replace(STRIP_MARKS, '');
+  const raw = (await readText(chatFile)).replace(/\r\n?/g, '\n').replace(STRIP_MARKS, '');
   const lines = raw.split('\n');
   if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
 
@@ -194,8 +200,8 @@ async function parse(input: ImportInput, ctx: ParseContext): Promise<Conversatio
   }
   const order = detectDateOrder(triples);
 
-  const title = chatTitleFromName(chatFile.name);
-  const convId = conversationId('whatsapp', chatFile.name || title || 'whatsapp');
+  const title = chatTitle(chatFile.path, input.source.name);
+  const convId = conversationId('whatsapp', baseName(chatFile.path) || title || 'whatsapp');
 
   const participants = new Map<string, Participant>();
   const ensureParticipant = (name: string): string => {
@@ -259,17 +265,17 @@ async function parse(input: ImportInput, ctx: ParseContext): Promise<Conversatio
   return conversation;
 }
 
-function detect(input: ImportInput): DetectResult {
+async function detect(input: ImportInput): Promise<DetectResult> {
   const f = pickChatFile(input.files);
   if (!f) return { platform: 'whatsapp', confidence: 0 };
-  const sample = strFromU8(f.bytes.slice(0, 8192)).replace(STRIP_MARKS, '');
+  const sample = (await readHeadText(f, 8192)).replace(STRIP_MARKS, '');
   const lines = sample.split(/\r?\n/).slice(0, 50).filter(Boolean);
   if (lines.length === 0) return { platform: 'whatsapp', confidence: 0 };
   let hits = 0;
   for (const l of lines) if (matchHeader(l)) hits++;
   const ratio = hits / lines.length;
   let confidence = ratio > 0.5 ? 0.92 : ratio > 0.2 ? 0.6 : ratio * 2;
-  if (/(_chat|whatsapp)/i.test(f.name)) confidence = Math.max(confidence, 0.7);
+  if (/(_chat|whatsapp)/i.test(baseName(f.path))) confidence = Math.max(confidence, 0.7);
   return { platform: 'whatsapp', confidence, reason: `${hits}/${lines.length} header lines matched` };
 }
 

@@ -33,10 +33,10 @@ export class Registry {
   }
 
   /** Runs every importer's detector and returns the highest-confidence match. */
-  detect(input: ImportInput): DetectResult {
+  async detect(input: ImportInput): Promise<DetectResult> {
     let best: DetectResult = { platform: 'generic', confidence: 0, reason: 'no importer matched' };
     for (const importer of this.importers.values()) {
-      const r = importer.detect(input);
+      const r = await importer.detect(input);
       if (r.confidence > best.confidence) best = r;
     }
     return best;
