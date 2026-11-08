@@ -74,7 +74,15 @@ export type PackageDestination =
   /** A file chosen with `showSaveFilePicker()` (Chromium); its handle can be posted to a worker. */
   | { kind: 'handle'; handle: FileSystemFileHandleLike }
   /** A file in the origin-private file system; the page then offers it as a download. */
-  | { kind: 'opfs'; name: string };
+  | { kind: 'opfs'; name: string }
+  /** A port that src/ui/download-sw.js reads into a streamed download (Safari 15.4+, Firefox). */
+  | { kind: 'port'; port: MessagePortLike };
+
+/** Structural stand-in for `MessagePort` (same reason as FileSystemFileHandleLike). */
+export interface MessagePortLike {
+  postMessage(message: unknown, transfer?: unknown[]): void;
+  close(): void;
+}
 
 /** Structural stand-in for `FileSystemFileHandle`, so this file needs neither the DOM nor the WebWorker lib. */
 export interface FileSystemFileHandleLike {

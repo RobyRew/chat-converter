@@ -10,7 +10,18 @@ import { segmentRichText } from '../engine/richtext';
 import { defaultTimeZone, zonedTimeToUtc } from '../engine/time';
 import { archiveName, guessSelf } from '../exporters/whatsapp-format';
 import { importTarget } from '../targets/index';
-import { canPickSaveFile, clearOpfsOutputs, downloadFromOpfs, dropName, entriesFromDataTransfer, entriesFromFileList, pickSaveFile } from '../browser/index';
+import {
+  canPickSaveFile,
+  clearOpfsOutputs,
+  downloadFromOpfs,
+  dropName,
+  entriesFromDataTransfer,
+  entriesFromFileList,
+  isSafari,
+  pickSaveFile,
+  startStreamedDownload,
+  type StreamedDownload,
+} from '../browser/index';
 import { ConverterClient, defaultWorker } from './client';
 import { debounce, h, replace } from './dom';
 import { dateInput, formatBytes, formatCount, formatDateTime, formatDay, hue } from './format';
@@ -26,7 +37,14 @@ interface Result {
   summary?: PackageSummary;
   archiveBytes?: number;
   opfsName?: string;
+  streamed?: boolean;
 }
+
+/** Where a package is written; `port` is a streamed download (download-sw.js). */
+type Destination =
+  | { kind: 'handle'; handle: FileSystemFileHandle }
+  | { kind: 'opfs'; name: string }
+  | { kind: 'port'; port: MessagePort };
 
 interface BatchOutcome {
   fileName: string;
@@ -39,6 +57,7 @@ interface BatchOutcome {
   warnings: string[];
   archiveBytes: number;
   opfsName?: string;
+  streamed?: boolean;
 }
 
 /** What the user set on one conversation of an archive, kept while they move between conversations. */
@@ -112,6 +131,9 @@ const LARGE_WITHOUT_PICKER = 2 * 1024 ** 3;
 function largeNotice(bytes: number): string {
   return `This package will be about ${formatBytes(bytes)}. This browser cannot write a file straight to disk, so the converter builds it in this site's browser storage first (${formatBytes(bytes)} of disk) and then hands it to your downloads; Safari has cancelled that hand-off for packages of several GB. Chrome and Edge write straight into the file you pick.`;
 }
+
+const SAFARI_UNZIP =
+  'Safari unzips downloaded .zip files while “Open safe files after downloading” is on (Safari → Settings → General). Telegram needs the .zip itself, so turn that setting off before converting.';
 
 /** Report words, matching the result panel's headings. */
 const STATUS_WORD: Record<string, string> = { preserved: 'kept', approximated: 'rewritten', dropped: 'not carried' };
@@ -396,17 +418,9 @@ export class ChatConverterElement extends HTMLElement {
       return;
     }
 
-    // Packages stream into a file: a picked file in Chromium (asked for inside this click), OPFS elsewhere.
-    let destination: { kind: 'handle'; handle: FileSystemFileHandle } | { kind: 'opfs'; name: string };
-    if (canPickSaveFile()) {
-      const handle = await pickSaveFile(fileName);
-      if (!handle) return;
-      destination = { kind: 'handle', handle };
-    } else {
-      if (!this.confirmLarge(this.estimateTotal())) return;
-      await clearOpfsOutputs().catch(() => 0);
-      destination = { kind: 'opfs', name: `chat-converter-${Date.now()}.zip` };
-    }
+    const picked = await this.packageDestination(fileName, this.estimateTotal());
+    if (!picked) return;
+    const { destination, transfer, streamed } = picked;
     this.largeNoticeFor = 0;
     this.phase = 'converting';
     this.progress = { entries: 0, bytes: 0, total: this.estimateTotal() };
@@ -430,6 +444,7 @@ export class ChatConverterElement extends HTMLElement {
           this.renderProgress();
         },
         id,
+        transfer,
       );
       if (res.ok && res.action === 'package') {
         this.result = {
@@ -439,6 +454,7 @@ export class ChatConverterElement extends HTMLElement {
           summary: res.summary,
           archiveBytes: res.archiveBytes,
           ...(res.opfsName ? { opfsName: res.opfsName } : {}),
+          ...(streamed ? { streamed: true } : {}),
         };
         if (res.opfsName) await downloadFromOpfs(res.opfsName, res.summary.suggestedName);
         this.phase = 'done';
@@ -448,6 +464,7 @@ export class ChatConverterElement extends HTMLElement {
       this.phase = 'error';
       this.error = e instanceof Error && e.name === 'AbortError' ? 'Conversion cancelled.' : e instanceof Error ? e.message : String(e);
     }
+    if (streamed) void streamed.done.catch(() => undefined).finally(() => streamed.dispose());
     this.runningId = '';
     this.render();
   }
@@ -472,6 +489,26 @@ export class ChatConverterElement extends HTMLElement {
     this.largeNoticeFor = estimate;
     this.render();
     return false;
+  }
+
+  /**
+   * Where a package goes: a picked file in Chromium (asked for inside this click); elsewhere a download streamed
+   * through download-sw.js; when that is unavailable, browser storage (OPFS) and then a download. Undefined:
+   * stop here (the picker was dismissed, or the size notice is showing).
+   */
+  private async packageDestination(
+    fileName: string,
+    estimate: number,
+  ): Promise<{ destination: Destination; transfer: Transferable[]; streamed?: StreamedDownload } | undefined> {
+    if (canPickSaveFile()) {
+      const handle = await pickSaveFile(fileName);
+      return handle ? { destination: { kind: 'handle', handle }, transfer: [] } : undefined;
+    }
+    const streamed = await startStreamedDownload(fileName);
+    if (streamed) return { destination: { kind: 'port', port: streamed.port }, transfer: [streamed.port], streamed };
+    if (!this.confirmLarge(estimate)) return undefined;
+    await clearOpfsOutputs().catch(() => 0);
+    return { destination: { kind: 'opfs', name: `chat-converter-${Date.now()}.zip` }, transfer: [] };
   }
 
   private batchEstimate(): number {
@@ -813,6 +850,7 @@ export class ChatConverterElement extends HTMLElement {
       cards,
       options,
       large ? h('div', { class: 'cc-alert cc-alert--warn', role: 'alert' }, largeNotice(this.largeNoticeFor)) : null,
+      isPackage(this.target) && !canPickSaveFile() && isSafari() ? h('div', { class: 'cc-alert cc-alert--warn' }, SAFARI_UNZIP) : null,
       go,
       busy && isPackage(this.target) ? this.progressBlock() : null,
       this.phase === 'error' ? h('div', { class: 'cc-alert cc-alert--error', role: 'alert' }, this.error) : null,
@@ -848,6 +886,7 @@ export class ChatConverterElement extends HTMLElement {
     return h('div', { class: 'cc-card cc-result', role: 'status' },
       h('div', { class: 'cc-card__head' }, h('h3', {}, 'Done')),
       h('p', { class: 'cc-result__file' }, r.fileName, r.archiveBytes ? ` · ${formatBytes(r.archiveBytes)}` : ''),
+      r.streamed ? h('p', { class: 'cc-muted' }, 'Written straight into your browser’s downloads.') : null,
       s
         ? h('dl', { class: 'cc-kv' },
             h('dt', {}, 'Messages'), h('dd', { class: s.messagesOut === s.messagesIn ? 'is-ok' : 'is-warn' }, `${formatCount(s.messagesOut)} of ${formatCount(s.messagesIn)}`),
@@ -1322,6 +1361,9 @@ export class ChatConverterElement extends HTMLElement {
         this.field('Format', select, TARGET_NOTES[this.batchTarget]),
         h('p', { class: 'cc-hint' }, how, ' Renames, “Me”, date ranges and removed messages you set on a conversation are applied.'),
         large ? h('div', { class: 'cc-alert cc-alert--warn', role: 'alert' }, largeNotice(this.largeNoticeFor)) : null,
+        n && !canPickSaveFile() && isSafari() && batchFileName(this.batchTarget, 'x', n).endsWith('.zip')
+          ? h('div', { class: 'cc-alert cc-alert--warn' }, SAFARI_UNZIP)
+          : null,
         go,
         this.batchRunning ? this.progressBlock() : null,
         this.batchError ? h('div', { class: 'cc-alert cc-alert--error', role: 'alert' }, this.batchError) : null,
@@ -1330,6 +1372,7 @@ export class ChatConverterElement extends HTMLElement {
         ? h('div', { class: 'cc-card cc-result', role: 'status' },
             h('div', { class: 'cc-card__head' }, h('h3', {}, 'Done')),
             h('p', { class: 'cc-result__file' }, r.fileName, ` · ${formatBytes(r.archiveBytes)}`),
+            r.streamed ? h('p', { class: 'cc-muted' }, 'Written straight into your browser’s downloads.') : null,
             h('dl', { class: 'cc-kv' },
               h('dt', {}, 'Conversations'), h('dd', {}, formatCount(r.conversations)),
               h('dt', {}, 'Messages'), h('dd', { class: r.messagesOut === r.messagesIn ? 'is-ok' : 'is-warn' }, `${formatCount(r.messagesOut)} of ${formatCount(r.messagesIn)}`),
@@ -1362,16 +1405,9 @@ export class ChatConverterElement extends HTMLElement {
     this.saveCurrent();
     const items = this.batchItems();
     const fileName = batchFileName(this.batchTarget, this.archive?.name ?? this.sourceName, items.length);
-    let destination: { kind: 'handle'; handle: FileSystemFileHandle } | { kind: 'opfs'; name: string };
-    if (canPickSaveFile()) {
-      const handle = await pickSaveFile(fileName);
-      if (!handle) return;
-      destination = { kind: 'handle', handle };
-    } else {
-      if (!this.confirmLarge(this.batchEstimate())) return;
-      await clearOpfsOutputs().catch(() => 0);
-      destination = { kind: 'opfs', name: `chat-converter-${Date.now()}.zip` };
-    }
+    const picked = await this.packageDestination(fileName, this.batchEstimate());
+    if (!picked) return;
+    const { destination, transfer, streamed } = picked;
     this.largeNoticeFor = 0;
     const client = this.worker();
     const id = client.nextId();
@@ -1390,6 +1426,7 @@ export class ChatConverterElement extends HTMLElement {
           this.renderProgress();
         },
         id,
+        transfer,
       );
       if (res.ok && res.action === 'batch') {
         this.batchResult = {
@@ -1403,6 +1440,7 @@ export class ChatConverterElement extends HTMLElement {
           warnings: res.warnings,
           archiveBytes: res.archiveBytes,
           ...(res.opfsName ? { opfsName: res.opfsName } : {}),
+          ...(streamed ? { streamed: true } : {}),
         };
         if (res.opfsName) await downloadFromOpfs(res.opfsName, res.suggestedName);
         this.emit('cc-converted', { target: this.batchTarget, fileName: res.suggestedName, conversations: res.conversations });
@@ -1410,6 +1448,7 @@ export class ChatConverterElement extends HTMLElement {
     } catch (e) {
       this.batchError = e instanceof Error && e.name === 'AbortError' ? 'Conversion cancelled.' : e instanceof Error ? e.message : String(e);
     }
+    if (streamed) void streamed.done.catch(() => undefined).finally(() => streamed.dispose());
     this.batchRunning = false;
     this.runningId = '';
     this.renderBatch();

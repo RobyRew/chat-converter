@@ -237,3 +237,22 @@ by Dokploy.
   `ghcr.io/robyrew/chat-converter:{latest,<sha>}` and calls the Dokploy webhook (`DOKPLOY_DEPLOY_WEBHOOK`). The
   Dokploy app (project Tools) pulls `:latest` and serves port 8080 at `chat-converter.robyrew.com`.
 **Status:** Accepted.
+
+## ADR-0009 — Without a save dialog, packages stream into a download through a service worker (2026-11-08) · Accepted
+**Context:** Safari and Firefox have no `showSaveFilePicker`. Packages were built in the site's browser storage
+(OPFS) and handed to the downloads through a `blob:` URL. In Safari an 11.18 GB telegram-ios package built that
+way, and Safari cancelled the hand-off twice after 0 bytes (`NSURLErrorDomain -999`); the stored copies also took
+11 GB of disk each until 0.1.2 started removing them. Safari has streamed service-worker downloads since 15.4.
+**Decision:**
+- `src/ui/download-sw.js` (classic service worker, emitted next to the element through
+  `new URL('../ui/download-sw.js', import.meta.url)`, scope = its folder) answers
+  `<scope>cc-download/<id>/<name>` with a `Content-Disposition: attachment` response streamed from a MessagePort.
+- `startStreamedDownload()` registers the id with a data port and a control port, opens a hidden frame on that
+  URL, and keeps the service worker alive with a message every 10 s. The conversion worker gets the data port as
+  a `{ kind: 'port' }` destination and posts one chunk per `pull` (the response stream's queue is 8 chunks), so
+  memory stays bounded at any package size. `cancel` from the browser aborts the conversion; an aborted
+  conversion errors the download.
+- Order: save dialog (Chromium) → streamed download → browser storage, which is used when there is no service
+  worker or the control port does not report `started` within 10 s (remembered for the page's lifetime).
+- Safari users are told to turn off "Open safe files after downloading", which unzips `.zip` downloads.
+**Status:** Accepted.

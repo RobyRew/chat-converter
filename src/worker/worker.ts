@@ -68,6 +68,35 @@ async function openRequestInput(req: ImportRequest): Promise<Source> {
 }
 
 async function destinationStream(dest: PackageDestination): Promise<{ writable: WritableStream<Uint8Array>; opfsName?: string }> {
+  if (dest.kind === 'port') {
+    // Streamed download through download-sw.js: one chunk per 'pull' the service worker sends, so at most its
+    // queue (8 chunks) is in flight. 'cancel' means the browser stopped receiving the file.
+    const port = dest.port as unknown as MessagePort;
+    let credits = 0;
+    let stopped = '';
+    let wake: (() => void) | undefined;
+    port.onmessage = (e: MessageEvent<{ type?: string; reason?: string }>) => {
+      if (e.data?.type === 'pull') credits += 1;
+      else if (e.data?.type === 'cancel') stopped = e.data.reason || 'The download was cancelled.';
+      wake?.();
+    };
+    const writable = new WritableStream<Uint8Array>({
+      async write(chunk) {
+        while (!credits && !stopped) await new Promise<void>((resolve) => (wake = resolve));
+        if (stopped) throw new DOMException(stopped, 'AbortError');
+        credits -= 1;
+        const copy = chunk.slice();
+        port.postMessage({ type: 'chunk', chunk: copy }, [copy.buffer]);
+      },
+      close() {
+        port.postMessage({ type: 'end' });
+      },
+      abort(reason) {
+        port.postMessage({ type: 'abort', reason: reason instanceof Error ? reason.message : String(reason ?? '') });
+      },
+    });
+    return { writable };
+  }
   if (dest.kind === 'handle') {
     const handle = dest.handle as unknown as FileSystemFileHandle;
     return { writable: (await handle.createWritable()) as WritableStream<Uint8Array> };

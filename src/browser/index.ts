@@ -146,3 +146,110 @@ export async function clearOpfsOutputs(keep?: string): Promise<number> {
   }
   return freed;
 }
+
+/** Safari on macOS or iOS, by user agent; used only for Safari-specific advice. */
+export function isSafari(): boolean {
+  const ua = navigator.userAgent;
+  return /Safari\//.test(ua) && !/Chrome\/|Chromium\/|CriOS\/|FxiOS\/|Edg\/|OPR\//.test(ua);
+}
+
+/** The service worker that streams downloads (src/ui/download-sw.js); bundlers emit it as an asset. */
+const DOWNLOAD_WORKER_URL = new URL('../ui/download-sw.js', import.meta.url);
+
+let downloadRegistration: Promise<ServiceWorkerRegistration | undefined> | undefined;
+let streamingUnavailable = false;
+
+function registerDownloadWorker(): Promise<ServiceWorkerRegistration | undefined> {
+  downloadRegistration ??= (async () => {
+    if (!('serviceWorker' in navigator) || !window.isSecureContext) return undefined;
+    if (DOWNLOAD_WORKER_URL.protocol === 'data:') {
+      console.warn('chat-converter: the bundler inlined download-sw.js as a data: URL (assetsInlineLimit), so streamed downloads are off.');
+      return undefined;
+    }
+    try {
+      const reg = await navigator.serviceWorker.register(DOWNLOAD_WORKER_URL);
+      const next = reg.installing ?? reg.waiting;
+      if (next) {
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, 5000);
+          const check = (): void => {
+            if (next.state !== 'activated' && next.state !== 'redundant') return;
+            clearTimeout(timer);
+            resolve();
+          };
+          next.addEventListener('statechange', check);
+          check();
+        });
+      }
+      return reg.active ? reg : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  return downloadRegistration;
+}
+
+export interface StreamedDownload {
+  /** Port the converter worker writes the package into; transfer it with the job. */
+  readonly port: MessagePort;
+  /** Resolves when the browser has received the whole file, rejects when it stopped receiving it. */
+  readonly done: Promise<void>;
+  /** Stops the keep-alive; the hidden frame is removed a minute later. */
+  dispose(): void;
+}
+
+/**
+ * Starts a download that the converter streams through download-sw.js, for browsers without a save dialog
+ * (Safari 15.4+, Firefox): the file goes into the browser's downloads as it is written, with no copy in memory
+ * or in site storage. Undefined when this browser cannot — no service worker, or the download did not start
+ * within 10 seconds — and the caller falls back to browser storage; a failure is remembered for the page's
+ * lifetime.
+ */
+export async function startStreamedDownload(fileName: string): Promise<StreamedDownload | undefined> {
+  if (streamingUnavailable) return undefined;
+  const reg = await registerDownloadWorker();
+  const sw = reg?.active;
+  if (!reg || !sw) {
+    streamingUnavailable = true;
+    return undefined;
+  }
+  const id = crypto.randomUUID();
+  const data = new MessageChannel();
+  const control = new MessageChannel();
+  let markStarted = (): void => undefined;
+  const started = new Promise<boolean>((resolve) => {
+    markStarted = () => resolve(true);
+    setTimeout(() => resolve(false), 10_000);
+  });
+  let finish = (): void => undefined;
+  let fail = (_e: Error): void => undefined;
+  const done = new Promise<void>((resolve, reject) => {
+    finish = resolve;
+    fail = reject;
+  });
+  control.port1.onmessage = (e: MessageEvent<{ type?: string; reason?: string }>) => {
+    if (e.data?.type === 'started') markStarted();
+    else if (e.data?.type === 'closed') finish();
+    else if (e.data?.type === 'cancelled') fail(new Error(e.data.reason ? `The download stopped: ${e.data.reason}` : 'The download was cancelled.'));
+  };
+  sw.postMessage({ type: 'cc-download', id, name: fileName }, [data.port2, control.port2]);
+  const frame = document.createElement('iframe');
+  frame.hidden = true;
+  frame.title = 'Download';
+  frame.src = new URL(`cc-download/${id}/${encodeURIComponent(fileName)}`, reg.scope).href;
+  document.body.append(frame);
+  const keepAlive = setInterval(() => reg.active?.postMessage({ type: 'cc-keepalive' }), 10_000);
+  const dispose = (): void => {
+    clearInterval(keepAlive);
+    control.port1.close();
+    // A browser may stop a download whose frame goes away, so the frame outlives the end by a minute.
+    setTimeout(() => frame.remove(), 60_000);
+  };
+  if (!(await started)) {
+    streamingUnavailable = true;
+    dispose();
+    data.port1.close();
+    return undefined;
+  }
+  return { port: data.port1, done, dispose };
+}

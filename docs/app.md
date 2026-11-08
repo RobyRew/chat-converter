@@ -25,8 +25,20 @@ Everything runs in the browser; the engine runs in a module Web Worker (`src/wor
      share to Telegram), streamed as it is written;
    - text formats: a zip with one file per conversation.
 
-Chromium saves through a save dialog (streamed to disk); other browsers write to the origin-private file system
-and then download.
+Saving a package (`.zip`):
+
+- **Chromium** (Chrome, Edge): a save dialog; the worker writes into the picked file.
+- **Safari 15.4+, Firefox:** a streamed download. The page registers `src/ui/download-sw.js` (a service worker
+  the bundler emits next to the element), opens a hidden frame on `<scope>cc-download/<id>/<name>`, and the
+  service worker answers it with a `Content-Disposition: attachment` response whose bytes the conversion worker
+  writes through a MessagePort, one chunk per `pull`. Nothing is held in memory or in site storage; the page
+  sends a keep-alive every 10 s while it runs.
+- **Fallback** (no service worker, or the download did not start within 10 s): the package is built in this
+  site's browser storage (OPFS) and then offered as a download; above 2 GiB a notice comes first. Stored
+  packages are removed when the page opens, before the next conversion, on Start over and from "Remove from
+  browser storage".
+- Safari unzips downloaded `.zip` files while "Open safe files after downloading" is on (Settings → General);
+  the page says so, because Telegram needs the `.zip` itself.
 
 Worker requests: `import`, `open`, `search`, `export`, `package`, `batch`, `cancel`, `release`
 (`src/worker/types.ts`). Host pages (ChatForge) listen to `cc-imported`, `cc-opened`, `cc-change`, `cc-converted`

@@ -32,7 +32,7 @@ See `docs/app.md`.
 ## Use as a library
 
 ```sh
-npm i github:RobyRew/chat-converter#v0.1.2
+npm i github:RobyRew/chat-converter#v0.1.3
 ```
 
 ```ts

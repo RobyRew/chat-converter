@@ -41,10 +41,15 @@ export class ConverterClient {
     return `r${this.seq}`;
   }
 
-  call(req: WorkerCall, onProgress?: (entries: number, bytes: number) => void, id = this.nextId()): Promise<WorkerResponse> {
+  call(
+    req: WorkerCall,
+    onProgress?: (entries: number, bytes: number) => void,
+    id = this.nextId(),
+    transfer: Transferable[] = [],
+  ): Promise<WorkerResponse> {
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject, ...(onProgress ? { onProgress } : {}) });
-      this.worker.postMessage({ ...req, id } as WorkerRequest);
+      this.worker.postMessage({ ...req, id } as WorkerRequest, transfer);
     });
   }
 
