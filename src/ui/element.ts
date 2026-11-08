@@ -10,7 +10,7 @@ import { segmentRichText } from '../engine/richtext';
 import { defaultTimeZone, zonedTimeToUtc } from '../engine/time';
 import { archiveName, guessSelf } from '../exporters/whatsapp-format';
 import { importTarget } from '../targets/index';
-import { canPickSaveFile, downloadFromOpfs, dropName, entriesFromDataTransfer, entriesFromFileList, pickSaveFile } from '../browser/index';
+import { canPickSaveFile, clearOpfsOutputs, downloadFromOpfs, dropName, entriesFromDataTransfer, entriesFromFileList, pickSaveFile } from '../browser/index';
 import { ConverterClient, defaultWorker } from './client';
 import { debounce, h, replace } from './dom';
 import { dateInput, formatBytes, formatCount, formatDateTime, formatDay, hue } from './format';
@@ -106,6 +106,16 @@ function supportedZones(): string[] {
  * - events: `cc-imported`, `cc-change`, `cc-converted` (bubbling, composed).
  * - `workerFactory` can replace the bundled worker.
  */
+/** Above this size, a browser without a save dialog shows a notice before it builds a package. */
+const LARGE_WITHOUT_PICKER = 2 * 1024 ** 3;
+
+function largeNotice(bytes: number): string {
+  return `This package will be about ${formatBytes(bytes)}. This browser cannot write a file straight to disk, so the converter builds it in this site's browser storage first (${formatBytes(bytes)} of disk) and then hands it to your downloads; Safari has cancelled that hand-off for packages of several GB. Chrome and Edge write straight into the file you pick.`;
+}
+
+/** Report words, matching the result panel's headings. */
+const STATUS_WORD: Record<string, string> = { preserved: 'kept', approximated: 'rewritten', dropped: 'not carried' };
+
 export class ChatConverterElement extends HTMLElement {
   workerFactory: () => Worker = defaultWorker;
 
@@ -156,6 +166,7 @@ export class ChatConverterElement extends HTMLElement {
   private names = new Map<string, Participant>();
   private root!: HTMLDivElement;
   private actions: Node[] = [];
+  private largeNoticeFor = 0;
 
   connectedCallback(): void {
     if (this.root) return;
@@ -164,6 +175,8 @@ export class ChatConverterElement extends HTMLElement {
     this.root = h('div', { class: 'cc' });
     this.append(this.root);
     this.render();
+    // Packages from earlier visits still take disk space in this site's browser storage (Safari, Firefox).
+    void clearOpfsOutputs().catch(() => 0);
   }
 
   disconnectedCallback(): void {
@@ -390,8 +403,11 @@ export class ChatConverterElement extends HTMLElement {
       if (!handle) return;
       destination = { kind: 'handle', handle };
     } else {
+      if (!this.confirmLarge(this.estimateTotal())) return;
+      await clearOpfsOutputs().catch(() => 0);
       destination = { kind: 'opfs', name: `chat-converter-${Date.now()}.zip` };
     }
+    this.largeNoticeFor = 0;
     this.phase = 'converting';
     this.progress = { entries: 0, bytes: 0, total: this.estimateTotal() };
     const id = client.nextId();
@@ -447,8 +463,32 @@ export class ChatConverterElement extends HTMLElement {
     return conv.messages.reduce((n, m) => n + (m.attachments ?? []).reduce((s, a) => s + (a.present ? (a.size ?? 0) : 0), 0), 0);
   }
 
+  /**
+   * Browsers without a save dialog (Safari, Firefox) build a package in this site's storage, then hand it to the
+   * downloads. Above LARGE_WITHOUT_PICKER the first click shows a notice; a second click at the same size goes ahead.
+   */
+  private confirmLarge(estimate: number): boolean {
+    if (canPickSaveFile() || estimate <= LARGE_WITHOUT_PICKER || this.largeNoticeFor === estimate) return true;
+    this.largeNoticeFor = estimate;
+    this.render();
+    return false;
+  }
+
+  private batchEstimate(): number {
+    return this.rows.filter((r) => this.selected.has(r.index)).reduce((s, r) => s + r.media.bytes, 0);
+  }
+
+  /** Deletes the package this page left in browser storage (and any older one); "Download again" goes with it. */
+  private async removeStored(): Promise<void> {
+    await clearOpfsOutputs().catch(() => 0);
+    if (this.result) this.result = { ...this.result, opfsName: undefined };
+    if (this.batchResult) this.batchResult = { ...this.batchResult, opfsName: undefined };
+    this.render();
+  }
+
   private startOver(): void {
     if (this.importId && this.client) void this.client.call({ action: 'release', importId: this.importId }).catch(() => undefined);
+    void clearOpfsOutputs().catch(() => 0);
     this.phase = 'empty';
     this.imported = undefined;
     this.importId = '';
@@ -763,14 +803,16 @@ export class ChatConverterElement extends HTMLElement {
       : null;
 
     const busy = this.phase === 'converting';
+    const large = !busy && isPackage(this.target) && this.largeNoticeFor > 0 && this.largeNoticeFor === this.estimateTotal();
     const go = h('button', { class: 'cc-btn cc-btn--primary cc-btn--block', type: 'button', disabled: busy },
-      busy ? 'Converting…' : isPackage(this.target) ? 'Convert & save .zip' : 'Convert & download');
+      busy ? 'Converting…' : large ? 'Convert anyway' : isPackage(this.target) ? 'Convert & save .zip' : 'Convert & download');
     go.addEventListener('click', () => void this.convert());
 
     return h('div', { class: 'cc-card' },
       h('div', { class: 'cc-card__head' }, h('h3', {}, 'Convert to')),
       cards,
       options,
+      large ? h('div', { class: 'cc-alert cc-alert--warn', role: 'alert' }, largeNotice(this.largeNoticeFor)) : null,
       go,
       busy && isPackage(this.target) ? this.progressBlock() : null,
       this.phase === 'error' ? h('div', { class: 'cc-alert cc-alert--error', role: 'alert' }, this.error) : null,
@@ -825,7 +867,10 @@ export class ChatConverterElement extends HTMLElement {
               : null)
         : null,
       r.opfsName
-        ? h('button', { class: 'cc-btn', type: 'button', onclick: () => void downloadFromOpfs(r.opfsName!, r.fileName) }, 'Download again')
+        ? h('div', { class: 'cc-row' },
+            h('button', { class: 'cc-btn', type: 'button', onclick: () => void downloadFromOpfs(r.opfsName!, r.fileName) }, 'Download again'),
+            h('button', { class: 'cc-link', type: 'button', onclick: () => void this.removeStored() },
+              `Remove from browser storage${r.archiveBytes ? ` (${formatBytes(r.archiveBytes)})` : ''}`))
         : null,
     );
   }
@@ -890,11 +935,19 @@ export class ChatConverterElement extends HTMLElement {
     if (!r) {
       return h('div', { class: 'cc-empty' }, 'Convert once to see what the format kept, rewrote and left out.');
     }
+    const asText = (isPackage(this.target) || this.target === 'whatsapp-txt') &&
+      r.report.entries.some((e) => e.status === 'dropped' && ['replies', 'forwards', 'edits'].includes(e.capability));
     return h('div', { class: 'cc-report' },
       h('p', { class: 'cc-muted' }, `${formatCount(r.report.stats.messages)} messages · ${formatCount(r.report.stats.participants)} participants · ${formatCount(r.report.stats.attachments)} attachments`),
       r.report.entries.length
-        ? h('div', { class: 'cc-chips' }, r.report.entries.map((e) => h('span', { class: `cc-chip is-${e.status}` }, `${e.capability}: ${e.status}${e.count ? ` (${formatCount(e.count)})` : ''}`)))
+        ? h('div', { class: 'cc-chips' }, r.report.entries.map((e) => h('span', { class: `cc-chip is-${e.status}` }, `${e.capability}: ${STATUS_WORD[e.status] ?? e.status}${e.count ? ` (${formatCount(e.count)})` : ''}`)))
         : h('p', {}, 'Nothing lost — everything maps to this format.'),
+      r.report.entries.some((e) => e.status !== 'preserved')
+        ? h('p', { class: 'cc-muted' }, 'Kept: in the output as it was. Rewritten: in the output in another form. Not carried: the format has no place for it; the messages themselves are still written.')
+        : null,
+      asText
+        ? h('p', { class: 'cc-muted' }, 'WhatsApp’s format has no replies, forwards or edit marks. To keep them as text, switch on “Quote the message a reply answers”, “Label forwarded messages” and “Mark edited messages”, then convert again.')
+        : null,
     );
   }
 
@@ -1252,8 +1305,9 @@ export class ChatConverterElement extends HTMLElement {
       : isPackage(this.batchTarget)
         ? 'One download with a .zip per conversation inside — each inner .zip is the file to share to Telegram.'
         : 'One download with a file per conversation.';
+    const large = !this.batchRunning && n > 0 && this.largeNoticeFor > 0 && this.largeNoticeFor === this.batchEstimate();
     const go = h('button', { class: 'cc-btn cc-btn--primary cc-btn--block', type: 'button', disabled: !n || this.batchRunning },
-      this.batchRunning ? 'Converting…' : n ? `Convert ${formatCount(n)} conversation${n === 1 ? '' : 's'}` : 'Select conversations to convert');
+      this.batchRunning ? 'Converting…' : large ? 'Convert anyway' : n ? `Convert ${formatCount(n)} conversation${n === 1 ? '' : 's'}` : 'Select conversations to convert');
     go.addEventListener('click', () => void this.runBatch());
     const clear = h('button', { class: 'cc-link', type: 'button', disabled: !n, onclick: () => {
       this.selected.clear();
@@ -1267,6 +1321,7 @@ export class ChatConverterElement extends HTMLElement {
         h('p', { class: 'cc-muted' }, n ? `${formatCount(n)} selected · ${formatCount(this.rows.filter((x) => this.selected.has(x.index)).reduce((s, x) => s + x.messageCount, 0))} messages` : 'Tick conversations in the list, or open one to edit and convert it on its own.'),
         this.field('Format', select, TARGET_NOTES[this.batchTarget]),
         h('p', { class: 'cc-hint' }, how, ' Renames, “Me”, date ranges and removed messages you set on a conversation are applied.'),
+        large ? h('div', { class: 'cc-alert cc-alert--warn', role: 'alert' }, largeNotice(this.largeNoticeFor)) : null,
         go,
         this.batchRunning ? this.progressBlock() : null,
         this.batchError ? h('div', { class: 'cc-alert cc-alert--error', role: 'alert' }, this.batchError) : null,
@@ -1281,7 +1336,11 @@ export class ChatConverterElement extends HTMLElement {
               h('dt', {}, 'Media files'), h('dd', {}, `${formatCount(r.mediaWritten)} written`)),
             r.files.length ? h('details', { class: 'cc-options' }, h('summary', {}, `${formatCount(r.files.length)} files inside`), h('ul', { class: 'cc-notes' }, r.files.map((f) => h('li', {}, `${f.name} · ${formatBytes(f.bytes)}`)))) : null,
             r.warnings.length ? h('details', { class: 'cc-options' }, h('summary', {}, `${formatCount(r.warnings.length)} notes`), h('ul', { class: 'cc-notes' }, r.warnings.map((w) => h('li', {}, w)))) : null,
-            r.opfsName ? h('button', { class: 'cc-btn', type: 'button', onclick: () => void downloadFromOpfs(r.opfsName!, r.fileName) }, 'Download again') : null)
+            r.opfsName
+              ? h('div', { class: 'cc-row' },
+                  h('button', { class: 'cc-btn', type: 'button', onclick: () => void downloadFromOpfs(r.opfsName!, r.fileName) }, 'Download again'),
+                  h('button', { class: 'cc-link', type: 'button', onclick: () => void this.removeStored() }, `Remove from browser storage (${formatBytes(r.archiveBytes)})`))
+              : null)
         : null,
     );
   }
@@ -1309,15 +1368,18 @@ export class ChatConverterElement extends HTMLElement {
       if (!handle) return;
       destination = { kind: 'handle', handle };
     } else {
+      if (!this.confirmLarge(this.batchEstimate())) return;
+      await clearOpfsOutputs().catch(() => 0);
       destination = { kind: 'opfs', name: `chat-converter-${Date.now()}.zip` };
     }
+    this.largeNoticeFor = 0;
     const client = this.worker();
     const id = client.nextId();
     this.runningId = id;
     this.batchRunning = true;
     this.batchResult = undefined;
     this.batchError = '';
-    this.progress = { entries: 0, bytes: 0, total: this.rows.filter((r) => this.selected.has(r.index)).reduce((s, r) => s + r.media.bytes, 0) };
+    this.progress = { entries: 0, bytes: 0, total: this.batchEstimate() };
     this.renderBatch();
     try {
       const res = await client.call(

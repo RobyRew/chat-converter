@@ -116,3 +116,33 @@ export async function downloadFromOpfs(name: string, downloadName: string): Prom
     await root.removeEntry(name).catch(() => undefined);
   };
 }
+
+/** Names the converter gives packages it writes into this site's browser storage (OPFS). */
+const OPFS_OUTPUT = /^chat-converter-\d+\.zip$/;
+
+/** `entries()` is declared by the DOM async-iterable lib, which consumers may not load; this is its shape. */
+type DirectoryEntries = { entries(): AsyncIterable<[string, FileSystemHandle]> };
+
+/**
+ * Removes packages earlier conversions left in this site's browser storage (OPFS), except `keep`, and returns the
+ * bytes removed. A file that a conversion in another tab is still writing is locked: removing it fails and it stays.
+ */
+export async function clearOpfsOutputs(keep?: string): Promise<number> {
+  if (typeof navigator.storage?.getDirectory !== 'function') return 0;
+  const root = await navigator.storage.getDirectory();
+  const names: string[] = [];
+  for await (const [name, handle] of (root as unknown as DirectoryEntries).entries()) {
+    if (handle.kind === 'file' && OPFS_OUTPUT.test(name) && name !== keep) names.push(name);
+  }
+  let freed = 0;
+  for (const name of names) {
+    try {
+      const { size } = await (await root.getFileHandle(name)).getFile();
+      await root.removeEntry(name);
+      freed += size;
+    } catch {
+      // Locked by a running conversion, or already gone.
+    }
+  }
+  return freed;
+}

@@ -478,6 +478,11 @@ chat-converter-app {
   border: 1px solid color-mix(in srgb, var(--cc-error) 45%, transparent);
   color: var(--cc-ink);
 }
+.cc-alert--warn {
+  background: color-mix(in srgb, var(--cc-warn) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cc-warn) 45%, transparent);
+  color: var(--cc-ink);
+}
 .cc-result__file {
   margin: 0;
   font-weight: 600;
