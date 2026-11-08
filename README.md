@@ -41,6 +41,12 @@ import { importArchive, writePackage, writeBatch } from '@robyrew/chat-converter
 
 The package exports TypeScript source; bundlers (Vite, esbuild) and Vitest/tsx transpile it.
 
+## Site
+
+`web/` is published as `ghcr.io/robyrew/chat-converter` (the root `Dockerfile` on
+`ghcr.io/robyrew/static-web`, built by `.github/workflows/build-image.yml` through RobyRew/platform) and
+served at <https://chat-converter.robyrew.com>. See ADR-0008 in `agents.md`.
+
 ## License
 
 Apache-2.0 — see `LICENSE` and `NOTICE`.

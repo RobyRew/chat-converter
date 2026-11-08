@@ -221,3 +221,19 @@ the bytes. A zip of per-chat packages keeps each Telegram import file intact.
 **Unverifiable from the exports:** the zone Meta's HTML times are written in (Facebook's footer gives one offset,
 Instagram's none), the zone of Hinge's timestamps (read as UTC), and why Meta exports some messages empty.
 **Status:** Accepted.
+
+## ADR-0008 — The site is a static-web image at chat-converter.robyrew.com (2026-11-08) · Accepted
+**Context:** The site in `web/` is static: every conversion runs in the visitor's browser. The RobyRew fleet
+serves static sites from `ghcr.io/robyrew/static-web` (pinned, non-root nginx, one security-header set), built
+on GitHub's runners by `RobyRew/platform`'s reusable `build-image.yml` so the 2 GB VPS never builds, and pulled
+by Dokploy.
+**Decision:**
+- `Dockerfile` at the repo root: `node:22-alpine` installs the root (the library's dependencies, which the site
+  bundles through `file:..`), then `web/`, runs `npm run build --prefix web`, and copies `web/dist` onto
+  `ghcr.io/robyrew/static-web:1`. The default CSP is kept: the converter's worker is a same-origin file and the
+  page loads nothing from other hosts (no analytics script).
+- `.dockerignore` keeps `.real-exports/` (local runs against real exports) out of any build context.
+- `.github/workflows/build-image.yml` calls the platform workflow on pushes to `main`; it publishes
+  `ghcr.io/robyrew/chat-converter:{latest,<sha>}` and calls the Dokploy webhook (`DOKPLOY_DEPLOY_WEBHOOK`). The
+  Dokploy app (project Tools) pulls `:latest` and serves port 8080 at `chat-converter.robyrew.com`.
+**Status:** Accepted.

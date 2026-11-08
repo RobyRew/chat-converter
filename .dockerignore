@@ -1,0 +1,13 @@
+.git
+node_modules
+web/node_modules
+web/dist
+web/.astro
+dist
+coverage
+# Local runs against real exports write here; personal chat data must never reach a build context.
+.real-exports
+*.log
+.DS_Store
+.env
+.env.*

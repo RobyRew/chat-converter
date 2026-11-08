@@ -1,0 +1,21 @@
+# The build definition lives in RobyRew/platform so it is maintained once for the whole fleet. This
+# repo only says WHEN to build and which secret to pass. Library changes rebuild the site too: the
+# site bundles the library from the repo root.
+name: Build and publish image
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**', '.vscode/**']
+  workflow_dispatch:
+
+jobs:
+  build:
+    # Declared here, not only in the reusable workflow: a called workflow can only reduce the caller's
+    # permissions, never escalate, and pushing to GHCR needs packages: write.
+    permissions:
+      contents: read
+      packages: write
+    uses: RobyRew/platform/.github/workflows/build-image.yml@main
+    secrets:
+      DOKPLOY_DEPLOY_WEBHOOK: ${{ secrets.DOKPLOY_DEPLOY_WEBHOOK }}
