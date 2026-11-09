@@ -284,3 +284,26 @@ forms; emoji icons; no menus. The site was one page that linked to GitHub for ev
 - The site gains a header (Convert · Formats · Guide, Auto/Light/Dark, Source; a menu button below 760 px), the
   `/formats` and `/guide` pages, and a footer.
 **Status:** Accepted.
+
+## ADR-0011 — Node 26 and TypeScript 7; Astro's checker runs on a TypeScript 6 alias (2026-11-09) · Accepted
+**Supersedes** the `node:22-alpine` build stage of ADR-0008.
+**Context:** The owner set the rule on 2026-11-09: the newest Node LTS and TypeScript 7 from now on, and new
+releases adopted as they ship. Node 26 has been the newest LTS since 2026-10-28; TypeScript 7.0.2 is the newest
+stable release. The library already compiled with TypeScript 7. The site stayed on 6.0.3 because Astro's checker
+(`@astrojs/check` 0.9.12, the newest) drives TypeScript's JavaScript API, which the TypeScript 7 compiler does not
+ship, and declares `typescript ^5 || ^6` as a peer. npm refuses that peer next to a direct `typescript@7`, and
+`overrides` do not change how a peer is satisfied (tried on 2026-11-09: ERESOLVE).
+**Decision:**
+- `engines.node` is `>=26` in both `package.json` files, `@types/node` follows (`^26`), and the Docker build stage
+  is `node:26-alpine`. TypeScript 7's Linux x64 binary is a statically linked Go executable, so it runs on Alpine's
+  musl.
+- The site depends on `typescript@^7` (`tsc --noEmit` covers its `.ts` files) and on `@astrojs/language-server`
+  instead of `@astrojs/check`. `web/scripts/astro-check.mjs` runs the language server's `AstroCheck`, which is what
+  `astro check` runs, with an explicit TypeScript: the `typescript-6` alias (`npm:typescript@^6.0.3`).
+  `npm run check` = `astro sync && tsc --noEmit && node scripts/astro-check.mjs`, and the build runs it before
+  `astro build`. On 2026-11-09 a type error planted in an `.astro` file and one in a `.ts` file each made it exit 1.
+- When Astro's checker accepts TypeScript 7, `astro check` replaces the script and the alias is removed.
+- Raising the minimum Node version is a breaking change for consumers on older Node, hence 0.3.0. ChatForge
+  installs with `engine-strict=false`, so it prints a warning until it moves to Node 26 itself.
+**Status:** Accepted.
+

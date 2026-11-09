@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.10
 # chat-converter.robyrew.com: the Astro site in web/ on the shared static-web runtime (RobyRew/platform).
 # Build context = repo root, because web/ takes the library from it ("@robyrew/chat-converter": "file:..").
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 # git: web/'s @robyrew/web-config is a github: tag dependency, which npm can clone.
 RUN apk add --no-cache git
