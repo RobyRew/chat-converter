@@ -1,0 +1,177 @@
+---
+import Base from '../layouts/Base.astro';
+import Icon from '../components/Icon.astro';
+import { EXPORT_GUIDES, IMPORT_TARGETS } from '@robyrew/chat-converter/targets';
+import { appStyle } from '@robyrew/chat-converter/ui/icons';
+
+const telegram = IMPORT_TARGETS.filter((t) => t.app === 'Telegram');
+---
+
+<Base title="Guide · Chat Converter" description="Get your chat export, convert it, and import it into Telegram — step by step." page="guide">
+  <div class="page">
+    <header class="page-head">
+      <p class="page-eyebrow"><Icon name="book" size={15} /> Guide</p>
+      <h1>From export to import, step by step</h1>
+      <p class="page-lead">Three steps: get the export from the app the chat is in, convert it here, then import the result where you want it.</p>
+      <nav class="page-toc" aria-label="On this page">
+        <a href="#export"><Icon name="upload" size={15} /> 1 · Get your export</a>
+        <a href="#convert"><Icon name="swap" size={15} /> 2 · Convert</a>
+        <a href="#import"><Icon name="send" size={15} /> 3 · Import into Telegram</a>
+        <a href="#faq"><Icon name="info" size={15} /> Questions</a>
+      </nav>
+    </header>
+
+    <section class="page-section big-step" id="export">
+      <span class="big-step__n">1</span>
+      <div class="big-step__body">
+        <h2>Get your export</h2>
+        <p>Every app has its own export or data download. Open yours for the steps.</p>
+        <div>
+          {
+            EXPORT_GUIDES.map((g, i) => (
+              <details class="fold" open={i === 0}>
+                <summary>
+                  <span class="mark" style={appStyle(g.platform)} aria-hidden="true">
+                    {g.app.slice(0, 1)}
+                  </span>
+                  <span>
+                    {g.app}
+                    <span class="sub"> · drop {g.drop}</span>
+                  </span>
+                  <Icon name="chevronDown" size={18} class="chev" />
+                </summary>
+                <div class="fold__body">
+                  <ol class="steps-list">
+                    {g.steps.map((s) => (
+                      <li>{s}</li>
+                    ))}
+                  </ol>
+                  {g.tip && (
+                    <p class="callout">
+                      <Icon name="info" size={17} />
+                      <span>{g.tip}</span>
+                    </p>
+                  )}
+                </div>
+              </details>
+            ))
+          }
+        </div>
+      </div>
+    </section>
+
+    <section class="page-section big-step" id="convert">
+      <span class="big-step__n">2</span>
+      <div class="big-step__body">
+        <h2>Convert</h2>
+        <ol class="steps-list">
+          <li><a href="/">Open the converter</a> and drop the export (or choose it). It is read in this tab; nothing is uploaded.</li>
+          <li>An export with many conversations (Instagram, Facebook, Snapchat…) opens on a list: search it, open one, or tick several to convert them together.</li>
+          <li>In <strong>Details</strong>, rename people, mark which one is you (“Me”), and narrow the dates if you want. In the chat preview, the − next to a message leaves it out.</li>
+          <li>In <strong>Export</strong>, pick a format — for Telegram, “Telegram · iPhone & iPad” — and press <strong>Convert & save</strong>.</li>
+        </ol>
+        <div class="cards">
+          <article class="rw-card card">
+            <div class="card__head"><span class="tile-icon"><Icon name="download" size={18} /></span><h3>Chrome and Edge</h3></div>
+            <p>A save dialog opens and the package is written straight into the file you pick.</p>
+          </article>
+          <article class="rw-card card">
+            <div class="card__head"><span class="tile-icon"><Icon name="zap" size={18} /></span><h3>Safari and Firefox</h3></div>
+            <p>The package goes straight into your Downloads while it is built. Keep the tab open until it finishes.</p>
+          </article>
+        </div>
+        <p class="callout">
+          <Icon name="alert" size={17} />
+          <span>Safari unzips downloaded .zip files while “Open safe files after downloading” is on (Safari → Settings → General). Telegram needs the .zip itself, so turn it off first.</span>
+        </p>
+      </div>
+    </section>
+
+    <section class="page-section big-step" id="import">
+      <span class="big-step__n">3</span>
+      <div class="big-step__body">
+        <h2>Import into Telegram</h2>
+        <p>Telegram reads the converted .zip as a WhatsApp export. Try a short chat first, then the full one.</p>
+        <div>
+          {
+            telegram.map((t, i) => (
+              <details class="fold" open={i === 0}>
+                <summary>
+                  <span class="tile-icon">
+                    <Icon name="send" size={18} />
+                  </span>
+                  <span>
+                    {t.app} on {t.client}
+                    <span class="sub"> · {t.carriesMedia ? 'text and media' : 'text only'}</span>
+                  </span>
+                  <Icon name="chevronDown" size={18} class="chev" />
+                </summary>
+                <div class="fold__body">
+                  <ol class="steps-list">
+                    {t.steps.map((s) => (
+                      <li>{s}</li>
+                    ))}
+                  </ol>
+                  <p class="sub">Limits</p>
+                  <ul class="bullets">
+                    {t.limits.map((l) => (
+                      <li>{l}</li>
+                    ))}
+                  </ul>
+                  {t.sources.length > 0 && (
+                    <p class="sources">
+                      Read from:{' '}
+                      {t.sources.map((s, j) => (
+                        <>
+                          {j > 0 && ' · '}
+                          <a href={s.url} rel="noopener">
+                            {s.label}
+                          </a>
+                        </>
+                      ))}
+                    </p>
+                  )}
+                </div>
+              </details>
+            ))
+          }
+        </div>
+      </div>
+    </section>
+
+    <section class="page-section" id="faq">
+      <h2><Icon name="info" size={20} /> Questions</h2>
+      <div>
+        <details class="fold">
+          <summary>Is anything uploaded?<Icon name="chevronDown" size={18} class="chev" /></summary>
+          <div class="fold__body">
+            <p>No. The export is read and converted by a worker inside this browser tab, and the result is saved straight to your device. The site loads nothing from other hosts and has no analytics; the code is open source.</p>
+          </div>
+        </details>
+        <details class="fold">
+          <summary>Why are some photos or videos missing?<Icon name="chevronDown" size={18} class="chev" /></summary>
+          <div class="fold__body">
+            <p>They are not in the export. Telegram Desktop exports only the media types you tick, and skips any single file larger than the size limit; set the limit to 4000 MB and tick every type. Self-destructing media is never exported. The converter lists what is missing under the notes of each export.</p>
+          </div>
+        </details>
+        <details class="fold">
+          <summary>How large can an export be?<Icon name="chevronDown" size={18} class="chev" /></summary>
+          <div class="fold__body">
+            <p>Files are read as they are needed and packages are written as they are built, so the size is not limited by memory. The disk needs room for the finished package.</p>
+          </div>
+        </details>
+        <details class="fold">
+          <summary>Who shows up as “me” after a Telegram import?<Icon name="chevronDown" size={18} class="chev" /></summary>
+          <div class="fold__body">
+            <p>Set “Me” in Details before converting: your messages are written from your side. In a private chat, Telegram imports into the chat with the other person, who must be a mutual contact.</p>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <div class="rw-card cta">
+      <p>Have your export? Convert it now.</p>
+      <a class="rw-btn rw-btn--primary rw-btn--lg" href="/"><Icon name="swap" size={17} /> Open the converter</a>
+    </div>
+  </div>
+</Base>

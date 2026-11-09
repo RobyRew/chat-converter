@@ -1,6 +1,6 @@
 {
   "name": "@robyrew/chat-converter",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "description": "Converts chat exports (Telegram Desktop, WhatsApp, Instagram, Facebook Messenger, Snapchat, VSCO, Hinge) through UniversalChat, one lossless versioned format, into other formats, including the package Telegram imports.",
   "license": "Apache-2.0",
   "author": "RobyRew (https://github.com/RobyRew)",
@@ -19,9 +19,11 @@
     "./worker": "./src/worker/worker.ts",
     "./transforms": "./src/engine/transforms.ts",
     "./richtext": "./src/engine/richtext.ts",
+    "./targets": "./src/targets/index.ts",
     "./browser": "./src/browser/index.ts",
     "./node": "./src/node/index.ts",
     "./ui": "./src/ui/index.ts",
+    "./ui/icons": "./src/ui/icons.ts",
     "./ui/styles.css": "./src/ui/styles.css"
   },
   "main": "./src/index.ts",

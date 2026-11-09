@@ -256,3 +256,31 @@ way, and Safari cancelled the hand-off twice after 0 bytes (`NSURLErrorDomain -9
   worker or the control port does not report `started` within 10 s (remembered for the page's lifetime).
 - Safari users are told to turn off "Open safe files after downloading", which unzips `.zip` downloads.
 **Status:** Accepted.
+
+## ADR-0010 — An app-frame UI: container-query panes, menus, and site pages (2026-11-09) · Accepted
+**Context:** The owner found the web UI ugly, unintuitive, not responsive and outdated, and asked for a complete
+redo for phone and desktop with menus. The element was a document-style page: a sidebar of cards (details, ten
+target cards, options, result) above or beside the preview, so on a phone the preview came after several screens of
+forms; emoji icons; no menus. The site was one page that linked to GitHub for everything else.
+**Decision:**
+- The element renders a start screen (drop area, per-app export guides, three steps), then an app frame: a top bar
+  over panes laid out by container queries on the element — one pane with bottom tabs below 760 px, the chat beside
+  one side pane up to 1180 px, Details · Chat · Export side by side above. Breakpoints follow the element's width,
+  not the window's, because hosts (the site, ChatForge) give it different widths. `--cc-app-h` sets the height.
+- Menus and sheets are modal `<dialog>`s appended inside the element: the top layer avoids clipping by the panes'
+  overflow and z-index fights with the host, and the dialog brings focus trapping and Escape. A popover on wide
+  screens, a bottom sheet below 640 px.
+- Icons are SVG strings in `src/ui/icons.ts` (no dependency), exported as `./ui/icons` so the site renders the same
+  set at build time.
+- The output list (short names, notes, groups, whether media is carried) and the per-app export guides are data in
+  `src/targets/index.ts` (`OUTPUT_FORMATS`, `OUTPUT_GROUPS`, `EXPORT_GUIDES`, exported as `./targets`), so the
+  element and the site's Formats and Guide pages read one source.
+- Light colours apply under `[data-theme='light']` only. ChatForge has no house theme stamp and a dark page; keying
+  the light palette on `prefers-color-scheme` would turn the element light inside it on a light-mode OS.
+- Changing the target, an option or an edit re-renders the pane it affects instead of the whole frame, to keep the
+  chat preview's scroll position.
+- On touch screens the leave-out button of a message shows after a tap on it; a permanent button on every message
+  crowded a phone-width chat.
+- The site gains a header (Convert · Formats · Guide, Auto/Light/Dark, Source; a menu button below 760 px), the
+  `/formats` and `/guide` pages, and a footer.
+**Status:** Accepted.

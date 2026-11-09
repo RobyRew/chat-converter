@@ -1,0 +1,377 @@
+---
+import Icon from './Icon.astro';
+import { SOURCE_URL, type Page } from '../site';
+interface Props {
+  current: Page;
+}
+const { current } = Astro.props;
+const links: Array<{ id: Page; label: string; href: string }> = [
+  { id: 'convert', label: 'Convert', href: '/' },
+  { id: 'formats', label: 'Formats', href: '/formats' },
+  { id: 'guide', label: 'Guide', href: '/guide' },
+];
+const SOURCE = SOURCE_URL;
+const themes = [
+  { id: 'auto', label: 'Match the system', icon: 'monitor' },
+  { id: 'light', label: 'Light', icon: 'sun' },
+  { id: 'dark', label: 'Dark', icon: 'moon' },
+] as const;
+---
+
+<header class="site-head" data-site-head>
+  <nav class="site-bar rw-glass" aria-label="Primary">
+    <a class="site-brand" href="/" aria-label="Chat Converter, home">
+      <span class="site-brand__mark" aria-hidden="true"><Icon name="swap" size={17} /></span>
+      <span class="site-brand__name">Chat Converter</span>
+    </a>
+
+    <ul class="site-links">
+      {
+        links.map((l) => (
+          <li>
+            <a href={l.href} class:list={['site-link', { 'is-current': l.id === current }]} aria-current={l.id === current ? 'page' : undefined}>
+              {l.label}
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+
+    <div class="site-actions">
+      <div class="theme-switch" role="radiogroup" aria-label="Theme">
+        {
+          themes.map((t) => (
+            <button type="button" role="radio" aria-checked="false" data-theme-set={t.id} title={t.label} aria-label={t.label}>
+              <Icon name={t.icon} size={16} />
+            </button>
+          ))
+        }
+      </div>
+      <a class="site-source" href={SOURCE} rel="noopener">
+        <Icon name="code" size={16} />
+        <span>Source</span>
+      </a>
+      <button class="site-menu-btn" type="button" aria-expanded="false" aria-controls="site-menu" aria-label="Menu">
+        <Icon name="menu" size={20} class="when-closed" />
+        <Icon name="x" size={20} class="when-open" />
+      </button>
+    </div>
+  </nav>
+
+  <div id="site-menu" class="site-menu rw-glass" hidden>
+    <ul>
+      {
+        links.map((l) => (
+          <li>
+            <a href={l.href} class:list={['site-menu__link', { 'is-current': l.id === current }]} aria-current={l.id === current ? 'page' : undefined}>
+              <Icon name={l.id === 'convert' ? 'swap' : l.id === 'formats' ? 'layers' : 'book'} size={19} />
+              {l.label}
+            </a>
+          </li>
+        ))
+      }
+      <li>
+        <a class="site-menu__link" href={SOURCE} rel="noopener">
+          <Icon name="code" size={19} />
+          Source on GitHub
+        </a>
+      </li>
+    </ul>
+    <div class="site-menu__theme">
+      <span>Theme</span>
+      <div class="theme-switch theme-switch--wide" role="radiogroup" aria-label="Theme">
+        {
+          themes.map((t) => (
+            <button type="button" role="radio" aria-checked="false" data-theme-set={t.id}>
+              <Icon name={t.icon} size={16} />
+              <span>{t.id === 'auto' ? 'Auto' : t.label}</span>
+            </button>
+          ))
+        }
+      </div>
+    </div>
+  </div>
+</header>
+
+<script>
+  // Theme: "auto" follows the system; light/dark are stored, as the house theme bootstrap reads them.
+  const KEY = 'theme';
+  const media = window.matchMedia('(prefers-color-scheme: dark)');
+  const stored = (): 'auto' | 'light' | 'dark' => {
+    try {
+      const v = localStorage.getItem(KEY);
+      return v === 'light' || v === 'dark' ? v : 'auto';
+    } catch {
+      return 'auto';
+    }
+  };
+  const sync = (mode: string): void => {
+    for (const b of document.querySelectorAll<HTMLElement>('[data-theme-set]')) b.setAttribute('aria-checked', String(b.dataset.themeSet === mode));
+  };
+  const apply = (mode: 'auto' | 'light' | 'dark'): void => {
+    try {
+      if (mode === 'auto') localStorage.removeItem(KEY);
+      else localStorage.setItem(KEY, mode);
+    } catch {
+      /* storage unavailable: the choice lasts for this page */
+    }
+    const dark = mode === 'dark' || (mode === 'auto' && media.matches);
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    sync(mode);
+  };
+  for (const b of document.querySelectorAll<HTMLElement>('[data-theme-set]')) {
+    b.addEventListener('click', () => apply(b.dataset.themeSet as 'auto' | 'light' | 'dark'));
+  }
+  media.addEventListener('change', () => {
+    if (stored() === 'auto') apply('auto');
+  });
+  sync(stored());
+
+  // The bar's height (with the space above it) as --site-head, so the converter's frame fills the rest of the screen.
+  const bar = document.querySelector<HTMLElement>('.site-bar');
+  const headEl = document.querySelector<HTMLElement>('[data-site-head]');
+  if (bar && headEl) {
+    const measure = (): void => {
+      const top = parseFloat(getComputedStyle(headEl).paddingTop) || 0;
+      document.documentElement.style.setProperty('--site-head', `${Math.ceil(bar.offsetHeight + top)}px`);
+    };
+    new ResizeObserver(measure).observe(bar);
+    measure();
+  }
+
+  // Phone menu.
+  const btn = document.querySelector<HTMLButtonElement>('.site-menu-btn');
+  const menu = document.getElementById('site-menu');
+  const head = document.querySelector<HTMLElement>('[data-site-head]');
+  const setOpen = (open: boolean): void => {
+    if (!btn || !menu) return;
+    menu.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+    head?.classList.toggle('is-open', open);
+  };
+  btn?.addEventListener('click', () => setOpen(!!menu && menu.hidden === true));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && menu && !menu.hidden) {
+      setOpen(false);
+      btn?.focus();
+    }
+  });
+  document.addEventListener('click', (e) => {
+    if (menu && !menu.hidden && head && !head.contains(e.target as Node)) setOpen(false);
+  });
+  window.matchMedia('(min-width: 760px)').addEventListener('change', (e) => {
+    if (e.matches) setOpen(false);
+  });
+</script>
+
+<style>
+  .site-head {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    padding: 0.6rem var(--gutter) 0;
+  }
+  /* Obsidian keeps its smoked glass in the light theme; a denser fill keeps the bar's ink readable over a light page. */
+  :global(:root[data-theme='light']) .site-bar,
+  :global(:root[data-theme='light']) .site-menu {
+    --t-alpha: 0.86;
+  }
+  .site-bar {
+    --r: 18px;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    max-width: var(--site-max);
+    margin-inline: auto;
+    padding: 0.45rem 0.45rem 0.45rem 0.6rem;
+  }
+  .site-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: var(--g-ink);
+    text-decoration: none;
+    font-weight: 750;
+    letter-spacing: -0.01em;
+  }
+  .site-brand__mark {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+    color: #fff;
+    background: linear-gradient(150deg, color-mix(in oklab, var(--accent) 82%, white), color-mix(in oklab, var(--accent) 70%, black));
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3);
+  }
+  .site-links {
+    display: flex;
+    gap: 2px;
+    margin: 0 auto 0 0.75rem;
+    padding: 0;
+    list-style: none;
+  }
+  .site-link {
+    display: block;
+    padding: 0.42rem 0.8rem;
+    border-radius: 999px;
+    color: var(--g-ink-dim);
+    font-size: 0.86rem;
+    font-weight: 650;
+    text-decoration: none;
+    transition: color 0.18s, background 0.18s;
+  }
+  .site-link:hover {
+    color: var(--g-ink);
+  }
+  .site-link.is-current {
+    color: var(--g-ink);
+    background: rgb(var(--rim-rgb) / 0.16);
+  }
+  .site-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-left: auto;
+  }
+  .theme-switch {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    background: rgb(var(--rim-rgb) / 0.08);
+  }
+  .theme-switch button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    width: 30px;
+    height: 28px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--g-ink-mute);
+    cursor: pointer;
+    transition: color 0.18s, background 0.18s;
+  }
+  .theme-switch button:hover {
+    color: var(--g-ink);
+  }
+  .theme-switch button[aria-checked='true'] {
+    color: var(--g-ink);
+    background: rgb(var(--rim-rgb) / 0.2);
+  }
+  .theme-switch--wide {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    width: 100%;
+  }
+  .theme-switch--wide button {
+    width: auto;
+    height: 36px;
+    font: 650 0.82rem/1 var(--g-font);
+  }
+  .site-source {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.85rem;
+    border-radius: 999px;
+    background: rgb(var(--rim-rgb) / 0.16);
+    box-shadow: inset 0 0 0 1px rgb(var(--rim-rgb) / 0.18);
+    color: var(--g-ink);
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .site-menu-btn {
+    display: none;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border: 0;
+    border-radius: 12px;
+    background: rgb(var(--rim-rgb) / 0.12);
+    color: var(--g-ink);
+    cursor: pointer;
+  }
+  .site-menu-btn :global(.when-open) {
+    display: none;
+  }
+  .is-open .site-menu-btn :global(.when-open) {
+    display: block;
+  }
+  .is-open .site-menu-btn :global(.when-closed) {
+    display: none;
+  }
+  .site-menu {
+    --r: 20px;
+    max-width: var(--site-max);
+    margin: 0.5rem auto 0;
+    padding: 0.5rem;
+    animation: menu-in 0.22s var(--rw-ease);
+  }
+  .site-menu ul {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .site-menu__link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.8rem 0.85rem;
+    border-radius: 14px;
+    color: var(--g-ink);
+    font-size: 1rem;
+    font-weight: 650;
+    text-decoration: none;
+  }
+  .site-menu__link:hover,
+  .site-menu__link.is-current {
+    background: rgb(var(--rim-rgb) / 0.14);
+  }
+  .site-menu__theme {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: 0.4rem;
+    padding: 0.75rem 0.85rem 0.5rem;
+    border-top: 1px solid rgb(var(--rim-rgb) / 0.14);
+    color: var(--g-ink-dim);
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+  .site-bar :focus-visible,
+  .site-menu :focus-visible {
+    outline: 2px solid var(--g-ink);
+    outline-offset: 2px;
+  }
+  @media (max-width: 759px) {
+    .site-links,
+    .site-actions > .theme-switch,
+    .site-source {
+      display: none;
+    }
+    .site-menu-btn {
+      display: grid;
+    }
+  }
+  @media (min-width: 760px) {
+    .site-menu {
+      display: none !important;
+    }
+  }
+  @keyframes menu-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+</style>

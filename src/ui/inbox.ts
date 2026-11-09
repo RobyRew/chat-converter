@@ -77,8 +77,9 @@ function initials(title: string): string {
   return letters.join('').toUpperCase() || '?';
 }
 
-export function avatar(title: string): HTMLElement {
-  return h('span', { class: 'cc-avatar', style: `--who-hue:${hue(title)}`, 'aria-hidden': 'true' }, initials(title));
+/** A round monogram in a colour derived from the name. */
+export function avatar(title: string, size: 'sm' | 'md' | 'lg' = 'md'): HTMLElement {
+  return h('span', { class: `cc-avatar cc-avatar--${size}`, style: `--who-hue:${hue(title)}`, 'aria-hidden': 'true' }, initials(title));
 }
 
 export interface RowHandlers {
@@ -90,15 +91,26 @@ export interface RowHandlers {
   onOpen: (index: number) => void;
 }
 
+/** "3.4k" style counts for the narrow meta column. */
+function compact(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 10_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  if (n < 1_000_000) return `${Math.round(n / 1000)}k`;
+  return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+}
+
 export function renderRow(r: ConversationSummary, o: RowHandlers): HTMLElement {
   const box = h('input', { type: 'checkbox', class: 'cc-check', checked: o.selected, 'aria-label': `Select ${r.title}` });
   box.addEventListener('click', (e) => e.stopPropagation());
   box.addEventListener('change', () => o.onToggle(r.index, box.checked));
   const preview = r.preview
-    ? h('span', { class: 'cc-chatrow__preview' }, r.preview.mine ? h('span', { class: 'cc-muted' }, 'You: ') : r.kind !== 'dm' && r.preview.sender ? h('span', { class: 'cc-muted' }, `${r.preview.sender}: `) : null, r.preview.text)
-    : h('span', { class: 'cc-chatrow__preview cc-muted' }, 'No messages');
+    ? h('span', { class: 'cc-chatrow__preview' },
+        r.preview.mine ? h('span', { class: 'cc-chatrow__who' }, 'You: ') : r.kind !== 'dm' && r.preview.sender ? h('span', { class: 'cc-chatrow__who' }, `${r.preview.sender}: `) : null,
+        r.preview.text)
+    : h('span', { class: 'cc-chatrow__preview is-empty' }, 'No messages');
+  const mediaTitle = `${formatCount(r.media.present)} of ${formatCount(r.media.total)} media files are in the export${r.media.bytes ? ` (${formatBytes(r.media.bytes)})` : ''}`;
   const row = h('div', { class: `cc-chatrow${o.selected ? ' is-selected' : ''}${o.current ? ' is-current' : ''}`, role: 'button', tabindex: 0, 'aria-label': `Open ${r.title}` },
-    box,
+    h('label', { class: 'cc-chatrow__pick', title: 'Select for converting several at once' }, box),
     avatar(r.title),
     h('div', { class: 'cc-chatrow__main' },
       h('div', { class: 'cc-chatrow__top' },
@@ -108,15 +120,17 @@ export function renderRow(r: ConversationSummary, o: RowHandlers): HTMLElement {
         o.edited ? h('span', { class: 'cc-badge is-accent' }, 'edited') : null,
         h('span', { class: 'cc-chatrow__date' }, r.lastTs ? formatDay(r.lastTs, o.timeZone) : ''),
       ),
-      preview,
-    ),
-    h('div', { class: 'cc-chatrow__meta' },
-      h('span', {}, `${formatCount(r.messageCount)} msg`),
-      r.media.total ? h('span', { class: r.media.present === r.media.total ? '' : 'is-warn', title: `${formatCount(r.media.present)} of ${formatCount(r.media.total)} media files are in the export` }, `${formatCount(r.media.present)}/${formatCount(r.media.total)} media${r.media.bytes ? ` · ${formatBytes(r.media.bytes)}` : ''}`) : null,
+      h('div', { class: 'cc-chatrow__bottom' },
+        preview,
+        h('span', { class: 'cc-chatrow__meta' },
+          h('span', { title: `${formatCount(r.messageCount)} messages` }, `${compact(r.messageCount)} msg`),
+          r.media.total ? h('span', { class: r.media.present === r.media.total ? '' : 'is-warn', title: mediaTitle }, ` · ${compact(r.media.present)}/${compact(r.media.total)} media`) : null),
+      ),
     ),
   );
   row.addEventListener('click', () => o.onOpen(r.index));
   row.addEventListener('keydown', (e) => {
+    if (e.target !== row) return;
     if (e.key === 'Enter') o.onOpen(r.index);
     else if (e.key === ' ') {
       e.preventDefault();
@@ -130,13 +144,17 @@ export function renderHit(hit: SearchHit, row: ConversationSummary | undefined, 
   const before = hit.snippet.slice(0, hit.at);
   const match = hit.snippet.slice(hit.at, hit.at + hit.length);
   const after = hit.snippet.slice(hit.at + hit.length);
-  const el = h('div', { class: 'cc-hit', role: 'button', tabindex: 0 },
-    h('div', { class: 'cc-chatrow__top' },
-      h('span', { class: 'cc-chatrow__title' }, row?.title ?? `#${hit.index + 1}`),
-      hit.sender ? h('span', { class: 'cc-muted' }, hit.sender) : null,
-      h('span', { class: 'cc-chatrow__date' }, hit.ts ? formatDay(hit.ts, timeZone) : ''),
+  const title = row?.title ?? `#${hit.index + 1}`;
+  const el = h('div', { class: 'cc-hit', role: 'button', tabindex: 0, 'aria-label': `Open ${title} at this message` },
+    avatar(title, 'sm'),
+    h('div', { class: 'cc-hit__main' },
+      h('div', { class: 'cc-chatrow__top' },
+        h('span', { class: 'cc-chatrow__title' }, title),
+        hit.sender ? h('span', { class: 'cc-hit__sender' }, hit.sender) : null,
+        h('span', { class: 'cc-chatrow__date' }, hit.ts ? formatDay(hit.ts, timeZone) : ''),
+      ),
+      h('p', { class: 'cc-hit__text' }, before, h('mark', {}, match), after),
     ),
-    h('p', { class: 'cc-hit__text' }, before, h('mark', {}, match), after),
   );
   const open = (): void => onOpen(hit.index, hit.messageId);
   el.addEventListener('click', open);

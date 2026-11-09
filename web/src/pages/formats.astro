@@ -1,0 +1,130 @@
+---
+import Base from '../layouts/Base.astro';
+import Icon from '../components/Icon.astro';
+import { EXPORT_GUIDES, IMPORT_TARGETS, OUTPUT_FORMATS, OUTPUT_GROUPS } from '@robyrew/chat-converter/targets';
+import { FORMAT_META } from '@robyrew/chat-converter/model';
+import { appStyle, type IconName } from '@robyrew/chat-converter/ui/icons';
+import { DOCS_URL, INPUT_DOCS } from '../site';
+
+const FORMAT_ICON: Record<string, IconName> = {
+  'telegram-ios': 'send',
+  'telegram-android': 'send',
+  'universalchat-zip': 'layers',
+  universalchat: 'braces',
+  html: 'globe',
+  markdown: 'fileText',
+  'whatsapp-zip': 'package',
+  'whatsapp-txt': 'fileText',
+  'telegram-json': 'braces',
+  json: 'braces',
+};
+const ext = (format: keyof typeof FORMAT_META): string => `.${FORMAT_META[format].extension}`;
+---
+
+<Base title="Formats · Chat Converter" description="Every chat export Chat Converter reads, every format it writes, and which apps import them." page="formats">
+  <div class="page">
+    <header class="page-head">
+      <p class="page-eyebrow"><Icon name="layers" size={15} /> Formats</p>
+      <h1>What it reads, and what it writes</h1>
+      <p class="page-lead">
+        Every conversion goes through UniversalChat, one versioned format that keeps everything an export holds. What a
+        target format has no place for is counted in the report, never dropped silently.
+      </p>
+      <nav class="page-toc" aria-label="On this page">
+        <a href="#reads"><Icon name="upload" size={15} /> Reads</a>
+        <a href="#writes"><Icon name="download" size={15} /> Writes</a>
+        <a href="#imports"><Icon name="send" size={15} /> Where it imports</a>
+      </nav>
+    </header>
+
+    <section class="page-section" id="reads">
+      <h2><Icon name="upload" size={20} /> Reads</h2>
+      <p>Drop the export each app gives you: a folder, a .zip or loose files. Several exports at once are fine.</p>
+      <div class="cards">
+        {
+          EXPORT_GUIDES.map((g) => (
+            <article class="rw-card card">
+              <div class="card__head">
+                <span class="mark" style={appStyle(g.platform)} aria-hidden="true">
+                  {g.app.slice(0, 1)}
+                </span>
+                <div>
+                  <h3>{g.app}</h3>
+                  <p class="sub">Drop {g.drop}</p>
+                </div>
+              </div>
+              <p>{g.steps[0]}</p>
+              <a class="more-link" href={INPUT_DOCS[g.platform] ?? DOCS_URL} rel="noopener">
+                Format notes <Icon name="arrowRight" size={15} />
+              </a>
+            </article>
+          ))
+        }
+      </div>
+    </section>
+
+    <section class="page-section" id="writes">
+      <h2><Icon name="download" size={20} /> Writes</h2>
+      <p>Pick one when you convert. Packages (.zip) are written as they are built, so their size is limited only by your disk.</p>
+      {
+        OUTPUT_GROUPS.map((g) => (
+          <>
+            <h3 class="group-title">{g.label}</h3>
+            <div class="rw-card rows">
+              {OUTPUT_FORMATS.filter((o) => o.group === g.id).map((o) => (
+                <div class="row">
+                  <span class="tile-icon">
+                    <Icon name={FORMAT_ICON[o.format] ?? 'file'} size={18} />
+                  </span>
+                  <div>
+                    <p class="row__name">
+                      {o.label}
+                      <code>{ext(o.format)}</code>
+                    </p>
+                    <p class="row__note">{o.note}</p>
+                  </div>
+                  <span class:list={['tag', { 'is-on': o.media }]}>{o.media ? 'with media' : 'text'}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        ))
+      }
+    </section>
+
+    <section class="page-section" id="imports">
+      <h2><Icon name="send" size={20} /> Where it imports</h2>
+      <p>
+        Telegram imports chat history from a file in WhatsApp's export format: its iPhone and iPad app uploads the media too,
+        the Android app reads the text. WhatsApp, Signal, iMessage, Messenger and Discord have no import feature.
+      </p>
+      <div class="rw-card rows">
+        {
+          IMPORT_TARGETS.map((t) => (
+            <div class="row">
+              <span class="tile-icon">
+                <Icon name={t.carriesMedia ? 'package' : 'fileText'} size={18} />
+              </span>
+              <div>
+                <p class="row__name">
+                  {t.app} · {t.client}
+                  <code>{FORMAT_META[t.format].label}</code>
+                </p>
+                <p class="row__note">{t.accepts}</p>
+              </div>
+              <span class:list={['tag', { 'is-on': t.carriesMedia }]}>{t.carriesMedia ? 'text + media' : 'text'}</span>
+            </div>
+          ))
+        }
+      </div>
+      <a class="more-link" href={`${DOCS_URL}/import-targets.md`} rel="noopener">
+        Every app checked, with sources <Icon name="arrowRight" size={15} />
+      </a>
+    </section>
+
+    <div class="rw-card cta">
+      <p>Ready? Drop an export and pick a format.</p>
+      <a class="rw-btn rw-btn--primary rw-btn--lg" href="/"><Icon name="swap" size={17} /> Open the converter</a>
+    </div>
+  </div>
+</Base>

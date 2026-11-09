@@ -32,7 +32,7 @@ See `docs/app.md`.
 ## Use as a library
 
 ```sh
-npm i github:RobyRew/chat-converter#v0.1.3
+npm i github:RobyRew/chat-converter#v0.2.0
 ```
 
 ```ts
@@ -41,11 +41,21 @@ import { importArchive, writePackage, writeBatch } from '@robyrew/chat-converter
 
 The package exports TypeScript source; bundlers (Vite, esbuild) and Vitest/tsx transpile it.
 
+The converter UI is a framework-free custom element any page can host:
+
+```ts
+import { defineChatConverter } from '@robyrew/chat-converter/ui';
+import '@robyrew/chat-converter/ui/styles.css';
+defineChatConverter(); // <chat-converter-app></chat-converter-app>
+```
+
 ## Site
 
-`web/` is published as `ghcr.io/robyrew/chat-converter` (the root `Dockerfile` on
-`ghcr.io/robyrew/static-web`, built by `.github/workflows/build-image.yml` through RobyRew/platform) and
-served at <https://chat-converter.robyrew.com>. See ADR-0008 in `agents.md`.
+`web/` is the site at <https://chat-converter.robyrew.com>: the converter (`/`), the formats it reads and
+writes (`/formats`) and a step-by-step guide from export to Telegram import (`/guide`), with light and dark
+themes. It is published as `ghcr.io/robyrew/chat-converter` (the root `Dockerfile` on
+`ghcr.io/robyrew/static-web`, built by `.github/workflows/build-image.yml` through RobyRew/platform). See
+ADR-0008 and ADR-0010 in `agents.md`, and `docs/app.md` for the UI.
 
 ## License
 

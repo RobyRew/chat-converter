@@ -1,46 +1,26 @@
 ---
-import GlassBar from '@robyrew/ui/components/GlassBar.astro';
 import Base from '../layouts/Base.astro';
+import Icon from '../components/Icon.astro';
 import '@robyrew/chat-converter/ui/styles.css';
 ---
 
 <Base
-  title="Chat Converter"
-  description="Convert a chat export from one app into what another imports — Telegram, WhatsApp and more — entirely in your browser."
+  title="Chat Converter — move your chats between apps"
+  description="Convert a chat export from Telegram, WhatsApp, Instagram, Facebook, Snapchat, VSCO or Hinge into what another app imports, entirely in your browser."
+  page="convert"
 >
-  <div class="glass-float wrap pt-3">
-    <GlassBar
-      links={[
-        { label: 'Convert', href: '/', current: true },
-        { label: 'Formats', href: 'https://github.com/RobyRew/chat-converter/tree/main/docs' },
-      ]}
-      action={{ label: 'Source', href: 'https://github.com/RobyRew/chat-converter' }}
-      hint="Private"
-    >
-      <span slot="brand" aria-hidden="true">⇄</span>
-    </GlassBar>
-  </div>
+  <section class="hero" data-hero>
+    <p class="hero__eyebrow"><Icon name="lock" size={14} /> Private · runs in your browser</p>
+    <h1>Move your chats <span class="hero__grad">between apps</span></h1>
+    <p class="hero__lead">
+      Turn a Telegram, WhatsApp, Instagram, Facebook, Snapchat, VSCO or Hinge export into the package Telegram
+      imports, a lossless UniversalChat archive, a web page and more.
+    </p>
+  </section>
 
-  <main class="wrap pb-16">
-    <header class="hero mt-10 mb-6 max-w-3xl">
-      <h1 class="text-3xl font-semibold tracking-tight text-ink sm:text-4xl">Chat Converter</h1>
-      <p class="mt-3 text-ink-2 leading-relaxed">
-        Turn a chat export from one app into what another app imports — a Telegram Desktop export into the package
-        Telegram's own importer accepts, an Instagram, Facebook, Snapchat, VSCO or Hinge data download into
-        browsable conversations, any of them into one lossless UniversalChat archive, and more. Everything is read
-        and written on this device; nothing is uploaded.
-      </p>
-    </header>
-
+  <div class="app-host">
     <chat-converter-app></chat-converter-app>
-
-    <footer class="mt-16 text-sm text-ink-3">
-      <p>
-        Open source under Apache-2.0 ·
-        <a class="underline hover:text-ink" href="https://github.com/RobyRew/chat-converter">github.com/RobyRew/chat-converter</a>
-      </p>
-    </footer>
-  </main>
+  </div>
 </Base>
 
 <script>
@@ -50,7 +30,7 @@ import '@robyrew/chat-converter/ui/styles.css';
   defineChatConverter();
 
   if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    gsap.from('.hero > *', { y: 12, opacity: 0, duration: 0.6, stagger: 0.08, ease: 'power2.out' });
-    gsap.from('chat-converter-app', { y: 16, opacity: 0, duration: 0.6, delay: 0.15, ease: 'power2.out' });
+    gsap.from('.hero > *', { y: 14, opacity: 0, duration: 0.7, stagger: 0.07, ease: 'power3.out', clearProps: 'all' });
+    gsap.from('.cc-start > *', { y: 18, opacity: 0, duration: 0.7, delay: 0.18, stagger: 0.08, ease: 'power3.out', clearProps: 'all' });
   }
 </script>

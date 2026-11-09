@@ -1,26 +1,37 @@
 ---
 import { themeBootstrap } from '@robyrew/web-config/theme-bootstrap';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import type { Page } from '../site';
 import '../styles/global.css';
 
 interface Props {
   title: string;
   description: string;
+  page: Page;
 }
-const { title, description } = Astro.props;
+const { title, description, page } = Astro.props;
 ---
 
 <!doctype html>
 <html lang="en" class="theme-loading">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>{title}</title>
     <meta name="description" content={description} />
     <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#08090d" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#e8eaf0" media="(prefers-color-scheme: light)" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <script is:inline set:html={themeBootstrap} />
   </head>
-  <body>
-    <slot />
+  <body data-page={page}>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <SiteHeader current={page} />
+    <main id="main" class="site-main">
+      <slot />
+    </main>
+    <SiteFooter />
   </body>
 </html>
