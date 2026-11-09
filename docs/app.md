@@ -30,8 +30,10 @@ Everything runs in the browser; the engine runs in a module Web Worker (`src/wor
 - **Export:** the targets grouped as in `OUTPUT_FORMATS` / `OUTPUT_GROUPS` (`src/targets/index.ts`), options for
   WhatsApp-format targets, notices, the result with the import steps; the file name, the convert button and the
   progress stay pinned at the bottom. Host actions (`slot="actions"`) sit at the end of this pane.
-- **Menus and sheets** (`src/ui/overlay.ts`) are modal `<dialog>`s appended inside the element: a popover under
-  its button on wide screens, a sheet from the bottom edge below 640 px; Escape or a click outside closes them.
+- **Menus and sheets** (`src/ui/overlay.ts`) are opaque modal `<dialog>`s appended inside the element: a popover
+  under its button on wide screens, a sheet from the bottom edge below 640 px; Escape or a click outside closes
+  them. Opened by pointer or touch, focus goes to the dialog itself; opened from the keyboard, a menu focuses its
+  first item.
 - **Theme:** dark by default; the light palette applies under an ancestor with `data-theme="light"` (the house
   theme stamp), not under `prefers-color-scheme`, so a dark host without that stamp stays dark. Colours read the
   house tokens (`--panel`, `--ink`, `--accent`…) when the page defines them.

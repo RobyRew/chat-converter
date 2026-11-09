@@ -1383,6 +1383,8 @@ export class ChatConverterElement extends HTMLElement {
       if (bounds) {
         jump.min = dateInput(bounds.min, this.timeZone);
         jump.max = dateInput(bounds.max, this.timeZone);
+        // An empty date field shows today's date in Safari; show where the chat starts instead.
+        jump.value = this.order === 'newest-first' ? jump.max : jump.min;
       }
       jump.addEventListener('click', () => {
         try {

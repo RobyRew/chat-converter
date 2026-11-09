@@ -2127,9 +2127,9 @@ select.cc-input--sm {
   overflow: hidden;
   border-radius: 16px;
   border: 1px solid var(--cc-hair);
-  background: color-mix(in oklab, var(--cc-panel) 86%, transparent);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
-  backdrop-filter: blur(24px) saturate(150%);
+  /* Opaque, no backdrop-filter: in Playwright's WebKit (2026-11-09) a top-layer dialog with a backdrop filter
+     showed the page's text, unblurred, through the menu's even at 97% opacity. */
+  background: var(--cc-panel);
   color: var(--cc-ink);
   box-shadow: 0 2px 6px rgb(var(--cc-shadow-rgb) / 0.12), 0 24px 60px -12px rgb(var(--cc-shadow-rgb) / 0.5);
 }
@@ -2165,6 +2165,9 @@ select.cc-input--sm {
   display: flex;
   flex-direction: column;
   max-height: inherit;
+}
+.cc-overlay__inner:focus {
+  outline: none;
 }
 .cc-overlay__grab {
   align-self: center;
@@ -2314,9 +2317,7 @@ select.cc-input--sm {
   padding: 0.65rem 0.95rem;
   border-radius: 14px;
   border: 1px solid var(--cc-hair);
-  background: color-mix(in oklab, var(--cc-panel) 88%, transparent);
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
-  backdrop-filter: blur(20px) saturate(150%);
+  background: var(--cc-panel);
   font-size: 0.86rem;
   font-weight: 600;
   box-shadow: 0 16px 40px -14px rgb(var(--cc-shadow-rgb) / 0.55);

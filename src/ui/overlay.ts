@@ -36,7 +36,8 @@ export function openOverlay(content: Node | Array<Node | null>, o: OverlayOption
   const close = (): void => {
     if (dialog.open) dialog.close();
   };
-  const inner = h('div', { class: 'cc-overlay__inner' },
+  // `autofocus` on the container: opening by tap does not ring the first control; Tab reaches them.
+  const inner = h('div', { class: 'cc-overlay__inner', tabindex: -1, autofocus: true },
     mode === 'sheet' ? h('span', { class: 'cc-overlay__grab', 'aria-hidden': 'true' }) : null,
     o.title
       ? h('div', { class: 'cc-overlay__head' },
@@ -87,9 +88,13 @@ export interface MenuItem {
 
 export type MenuEntry = MenuItem | { heading: string } | 'separator' | null | false | undefined;
 
-/** A menu of actions; arrow keys move between items, Enter/click runs one and closes the menu. */
+/**
+ * A menu of actions; arrow keys move between items, Enter/click runs one and closes the menu. Opened from the
+ * keyboard, the first item takes focus; opened by pointer or touch, the menu itself does.
+ */
 export function openMenu(entries: MenuEntry[], o: OverlayOptions): Overlay {
   let overlay: Overlay | undefined;
+  const fromKeyboard = !!o.anchor?.matches(':focus-visible');
   const items: HTMLButtonElement[] = [];
   const list = h('div', { class: 'cc-menu', role: 'menu', 'aria-label': o.label });
   for (const entry of entries) {
@@ -119,7 +124,7 @@ export function openMenu(entries: MenuEntry[], o: OverlayOptions): Overlay {
     items.push(item);
     list.append(item);
   }
-  list.addEventListener('keydown', (e) => {
+  const onKey = (e: KeyboardEvent): void => {
     const enabled = items.filter((b) => !b.disabled);
     const at = enabled.indexOf(document.activeElement as HTMLButtonElement);
     let next = -1;
@@ -131,8 +136,10 @@ export function openMenu(entries: MenuEntry[], o: OverlayOptions): Overlay {
       e.preventDefault();
       enabled[next]?.focus();
     }
-  });
+  };
   overlay = openOverlay(list, { width: 260, ...o });
-  items.find((b) => !b.disabled)?.focus();
+  // On the dialog, not the list: focus may sit on the dialog's container, outside the list.
+  overlay.dialog.addEventListener('keydown', onKey);
+  if (fromKeyboard) items.find((b) => !b.disabled)?.focus();
   return overlay;
 }
