@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@astrojs/language-server": "^2.17.3",
-    "@robyrew/web-config": "github:RobyRew/web-config#v0.2.0",
+    "@robyrew/web-config": "github:RobyRew/web-config#v0.3.1",
     "@tailwindcss/vite": "^4.3.5",
     "tailwindcss": "^4.3.5",
     "typescript": "^7.0.2",
