@@ -1,0 +1,65 @@
+---
+import Icon from '../Icon.astro';
+import { appStyle } from '@robyrew/chat-converter/ui/icons';
+
+const apps = [
+  ['whatsapp', 'W'],
+  ['telegram', 'T'],
+  ['instagram', 'I'],
+  ['messenger', 'F'],
+  ['snapchat', 'S'],
+] as const;
+---
+
+<section id="how" class="section landing" aria-labelledby="how-title" data-reveal>
+  <header class="section__head">
+    <p class="kicker">How it works</p>
+    <h2 id="how-title">Three steps. No account.</h2>
+  </header>
+
+  <ol class="steps">
+    <li class="step">
+      <div class="art" aria-hidden="true">
+        <div class="mini-file">
+          <span class="mini-file__badge">ZIP</span>
+          <span><b>WhatsApp Chat - Maya.zip</b><small>24 MB · 312 files</small></span>
+        </div>
+        <div class="mini-apps">
+          {apps.map(([id, letter]) => <span class="mark" style={appStyle(id)}>{letter}</span>)}
+        </div>
+      </div>
+      <p class="step__n">1</p>
+      <h3>Export your chat</h3>
+      <p>Use the app's own export and grab the .zip or folder.</p>
+    </li>
+
+    <li class="step">
+      <div class="art" aria-hidden="true">
+        <div class="mini-bubble mini-bubble--in">Lisbon is booked!!</div>
+        <div class="mini-bubble mini-bubble--out">I found a place in Alfama</div>
+        <div class="mini-row">
+          <span class="mini-chip is-on"><Icon name="users" size={13} /> Leo · Me</span>
+          <span class="mini-chip"><Icon name="calendar" size={13} /> Jun 12 – 13</span>
+        </div>
+      </div>
+      <p class="step__n">2</p>
+      <h3>Check names and dates</h3>
+      <p>See every message, rename people and mark which one is you.</p>
+    </li>
+
+    <li class="step">
+      <div class="art" aria-hidden="true">
+        <div class="mini-share">
+          <span class="mini-share__tile"><Icon name="message" size={18} /></span>
+          <span class="mini-share__tile is-on"><Icon name="send" size={18} /></span>
+          <span class="mini-share__tile"><Icon name="folder" size={18} /></span>
+          <span class="mini-share__tile"><Icon name="globe" size={18} /></span>
+        </div>
+        <p class="mini-caption"><Icon name="checkCircle" size={14} /> Imported into Telegram</p>
+      </div>
+      <p class="step__n">3</p>
+      <h3>Import it</h3>
+      <p>Share the .zip to Telegram, or keep a complete copy.</p>
+    </li>
+  </ol>
+</section>

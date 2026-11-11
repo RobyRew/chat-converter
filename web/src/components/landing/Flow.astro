@@ -1,0 +1,58 @@
+---
+import Icon from '../Icon.astro';
+import { EXPORT_GUIDES, OUTPUT_FORMATS } from '@robyrew/chat-converter/targets';
+import { appStyle, type IconName } from '@robyrew/chat-converter/ui/icons';
+
+const sources = EXPORT_GUIDES.filter((g) => g.platform !== 'universalchat');
+const ICON: Record<string, IconName> = {
+  'telegram-ios': 'send',
+  'telegram-android': 'send',
+  'whatsapp-zip': 'package',
+  html: 'globe',
+  markdown: 'fileText',
+  json: 'braces',
+};
+const outputs = OUTPUT_FORMATS.filter((o) => o.format in ICON);
+---
+
+<section class="section landing" aria-labelledby="flow-title" data-reveal>
+  <header class="section__head">
+    <p class="kicker">Formats</p>
+    <h2 id="flow-title">Every app in, the right format out</h2>
+  </header>
+
+  <div class="flow">
+    <ul class="flow__col" aria-label="Reads">
+      {
+        sources.map((g) => (
+          <li class="flow__item">
+            <span class="mark mark--sm" style={appStyle(g.platform)} aria-hidden="true">
+              {g.app.slice(0, 1)}
+            </span>
+            {g.app}
+          </li>
+        ))
+      }
+    </ul>
+    <span class="flow__pipe" aria-hidden="true"></span>
+    <div class="flow__hub">
+      <span class="flow__hub-icon" aria-hidden="true"><Icon name="layers" size={26} /></span>
+      <b>UniversalChat</b>
+      <small>one lossless format in the middle</small>
+    </div>
+    <span class="flow__pipe" aria-hidden="true"></span>
+    <ul class="flow__col" aria-label="Writes">
+      {
+        outputs.map((o) => (
+          <li class="flow__item">
+            <span class="flow__icon" aria-hidden="true">
+              <Icon name={ICON[o.format] ?? 'file'} size={15} />
+            </span>
+            {o.label}
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+  <p class="section__more"><a href="/formats/">Every format, and how to get each export <Icon name="arrowRight" size={15} /></a></p>
+</section>

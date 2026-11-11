@@ -1,0 +1,31 @@
+---
+import Icon from '../Icon.astro';
+import type { IconName } from '@robyrew/chat-converter/ui/icons';
+
+const FEATURES: Array<{ icon: IconName; title: string; text: string }> = [
+  { icon: 'lock', title: 'Private by design', text: 'Read and converted in your browser. Nothing is uploaded.' },
+  { icon: 'send', title: 'Ready for Telegram', text: 'The package Telegram imports on iPhone, photos and voice notes included.' },
+  { icon: 'layers', title: 'Lossless archive', text: 'UniversalChat keeps every message, reaction and file in one file.' },
+  { icon: 'zap', title: 'Built for big chats', text: 'Tens of thousands of messages and gigabytes of media, streamed to disk.' },
+  { icon: 'sliders', title: 'Make it yours', text: 'Rename people, choose who you are, trim dates, leave messages out.' },
+  { icon: 'monitor', title: 'Phone or desktop', text: 'The same converter on a phone, a tablet or a laptop.' },
+];
+---
+
+<section class="section landing" aria-labelledby="features-title" data-reveal>
+  <header class="section__head">
+    <p class="kicker">Why Chat Converter</p>
+    <h2 id="features-title">Made for chats that matter</h2>
+  </header>
+  <ul class="features">
+    {
+      FEATURES.map((f) => (
+        <li class="feature">
+          <span class="feature__icon"><Icon name={f.icon} size={20} /></span>
+          <h3>{f.title}</h3>
+          <p>{f.text}</p>
+        </li>
+      ))
+    }
+  </ul>
+</section>

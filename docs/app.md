@@ -80,14 +80,23 @@ Saving a package (`.zip`):
 
 ## Site pages (`web/src/pages/`)
 
-- `/` — the converter. The hero shows only with the start screen.
+- `/` — the converter, inside a landing page (`web/src/components/landing/`): a hero with screenshots of the
+  converter itself (one set per theme in `web/public/img/`, made by `web/scripts/screenshots.mjs`), the converter
+  (`#convert`), How it works (three illustrated steps; the element's own steps are hidden on this page), six
+  features, a sources → UniversalChat → formats diagram, and a closing call to action. Every `.landing` section
+  hides once an export is open, so the converter's frame fills the screen under the header. GSAP brings the hero in
+  and raises sections as they scroll into view; none of it runs under reduced motion.
 - `/formats` — what the converter reads (`EXPORT_GUIDES`), what it writes (`OUTPUT_FORMATS`) and where the output
   imports (`IMPORT_TARGETS`), built from the library's data at build time.
 - `/guide` — get your export, convert, import into Telegram (steps, limits and sources from `IMPORT_TARGETS`),
   questions.
-- Header: Convert · Formats · Guide, a theme switch (Auto · Light · Dark; Light and Dark are stored under
-  `localStorage.theme`, which the house theme bootstrap reads) and Source; below 760 px a menu button opens the
-  same links and the theme switch. The header measures itself into `--site-head`.
+- Header: Convert · Formats · Guide, a theme switch (Auto · Light · Dark, `data-rw-theme-set` controls bound by
+  `initThemeControls()` from `@robyrew/ui/theme.js`, which stores the choice under `localStorage.theme` for the
+  pre-paint bootstrap) and Source; below 760 px a menu button opens the same links and the theme switch. The
+  header measures itself into `--site-head`.
+- Theme: the site takes the house tokens from web-config v0.4.0 (ui v0.4.0): one neutral grey family per theme,
+  glass that follows the theme, and `--on-accent` for text on accent fills. The page maps the converter's own
+  `--cc-primary` / `--cc-on-primary` to `--accent` / `--on-accent`.
 
 Worker requests: `import`, `open`, `search`, `export`, `package`, `batch`, `cancel`, `release`
 (`src/worker/types.ts`). Host pages (ChatForge) listen to `cc-imported`, `cc-opened`, `cc-change`, `cc-converted`

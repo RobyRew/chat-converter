@@ -714,7 +714,7 @@ export class ChatConverterElement extends HTMLElement {
       h('p', { class: 'cc-drop__text' },
         reading
           ? `${this.dropLabel ? `${this.dropLabel} — ` : ''}large exports take a moment.`
-          : 'A folder, a .zip or loose files from Telegram, WhatsApp, Instagram, Facebook, Snapchat, VSCO or Hinge — or a UniversalChat package.'),
+          : 'A folder, a .zip or loose files from any of the apps below.'),
       reading
         ? h('div', { class: 'cc-bar cc-bar--busy', role: 'progressbar', 'aria-label': 'Reading' }, h('i'))
         : h('div', { class: 'cc-drop__actions' }, coarse ? [pickFiles, pickFolder] : [pickFolder, pickFiles]),

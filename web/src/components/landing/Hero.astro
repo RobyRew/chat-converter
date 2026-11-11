@@ -1,0 +1,43 @@
+---
+import Icon from '../Icon.astro';
+
+// Screenshots of the converter itself (a fictional chat), one per theme; CSS shows the one matching data-theme.
+const SHOTS = {
+  desktop: { width: 2088, height: 1167, alt: 'Chat Converter with a WhatsApp chat open: details, the messages, and the formats to convert to' },
+  phone: { width: 786, height: 1552, alt: 'The same chat in Chat Converter on a phone' },
+} as const;
+---
+
+<section class="hero landing" aria-labelledby="hero-title">
+  <div class="hero__copy">
+    <p class="pill"><Icon name="shield" size={14} /> Free · Private · Open source</p>
+    <h1 id="hero-title">Move your chats <span class="grad">between apps</span></h1>
+    <p class="hero__lead">
+      Turn a WhatsApp, Telegram, Instagram or Facebook export into a file another app can import — without uploading a
+      thing.
+    </p>
+    <div class="hero__ctas">
+      <a class="btn btn--primary btn--lg" href="#convert"><Icon name="upload" size={18} /> Convert a chat</a>
+      <a class="btn btn--ghost btn--lg" href="#how">How it works</a>
+    </div>
+    <ul class="hero__trust">
+      <li><Icon name="lock" size={16} /> Runs in your browser</li>
+      <li><Icon name="send" size={16} /> Ready for Telegram</li>
+      <li><Icon name="layers" size={16} /> Lossless archive</li>
+    </ul>
+  </div>
+
+  <div class="hero__visual">
+    <figure class="shot shot--desktop">
+      <div class="shot__bar" aria-hidden="true"><i></i><i></i><i></i><span>chat-converter.robyrew.com</span></div>
+      <img class="for-dark" src="/img/app-desktop-dark.webp" width={SHOTS.desktop.width} height={SHOTS.desktop.height} alt={SHOTS.desktop.alt} loading="lazy" decoding="async" />
+      <img class="for-light" src="/img/app-desktop-light.webp" width={SHOTS.desktop.width} height={SHOTS.desktop.height} alt={SHOTS.desktop.alt} loading="lazy" decoding="async" />
+    </figure>
+    <figure class="shot shot--phone">
+      <img class="for-dark" src="/img/app-phone-dark.webp" width={SHOTS.phone.width} height={SHOTS.phone.height} alt={SHOTS.phone.alt} loading="lazy" decoding="async" />
+      <img class="for-light" src="/img/app-phone-light.webp" width={SHOTS.phone.width} height={SHOTS.phone.height} alt={SHOTS.phone.alt} loading="lazy" decoding="async" />
+    </figure>
+    <p class="float-chip float-chip--a" aria-hidden="true"><Icon name="checkCircle" size={16} /> 11 of 11 messages kept</p>
+    <p class="float-chip float-chip--b" aria-hidden="true"><Icon name="package" size={16} /> Telegram-ready .zip</p>
+  </div>
+</section>

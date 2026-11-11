@@ -63,60 +63,22 @@ body {
 
 /* ---------------------------------------------------------------- converter page */
 
-.hero {
-  display: grid;
-  justify-items: center;
-  gap: 0.9rem;
-  padding: clamp(1.75rem, 6vw, 4rem) 0 clamp(1.25rem, 3vw, 2rem);
-  text-align: center;
-}
-.hero__eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  margin: 0;
-  padding: 0.32rem 0.8rem;
-  border-radius: 999px;
-  border: 1px solid var(--hair);
-  background: var(--panel);
-  color: var(--ink-2);
-  font-size: 0.8rem;
-  font-weight: 650;
-}
-.hero__eyebrow .icon {
-  color: var(--accent);
-}
-.hero h1 {
-  margin: 0;
-  max-width: 16ch;
-  font-size: clamp(2.1rem, 5.6vw, 3.6rem);
-  font-weight: 800;
-  letter-spacing: -0.04em;
-  line-height: 1.04;
-}
-.hero__grad {
-  background: linear-gradient(100deg, var(--accent), color-mix(in oklab, var(--accent) 45%, #c08cff));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-.hero__lead {
-  max-width: 42rem;
-  margin: 0;
-  color: var(--ink-2);
-  font-size: clamp(1rem, 1.2vw + 0.7rem, 1.12rem);
-  line-height: 1.6;
-}
-
 .app-host {
   padding-bottom: 1rem;
 }
 .app-host chat-converter-app {
   --cc-app-h: calc(100dvh - var(--site-head) - 1.5rem);
+  /* The house accent fill and its label colour (ui >= 0.4), so the converter's buttons match the page's. */
+  --cc-primary: var(--accent);
+  --cc-on-primary: var(--on-accent, #fff);
+}
+/* The page has its own "How it works" section. */
+.app-host .cc-steps {
+  display: none;
 }
 
-/* Once an export is open the page is the app: no hero, the frame fills the screen under the header. */
-body:has(chat-converter-app:not([data-view='start'])) .hero {
+/* Once an export is open the page is the app: no landing sections, the frame fills the screen under the header. */
+body:has(chat-converter-app:not([data-view='start'])) .landing {
   display: none;
 }
 body:has(chat-converter-app:not([data-view='start'])) .app-host {

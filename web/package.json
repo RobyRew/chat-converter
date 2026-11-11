@@ -1,7 +1,7 @@
 {
   "name": "chat-converter-web",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "license": "Apache-2.0",
   "type": "module",
   "description": "Chat Converter web app — converts chat exports in the browser; nothing is uploaded.",
@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@astrojs/language-server": "^2.17.3",
-    "@robyrew/web-config": "github:RobyRew/web-config#v0.3.1",
+    "@robyrew/web-config": "github:RobyRew/web-config#v0.4.0",
     "@tailwindcss/vite": "^4.3.5",
     "tailwindcss": "^4.3.5",
     "typescript": "^7.0.2",

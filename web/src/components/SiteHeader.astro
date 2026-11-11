@@ -12,7 +12,7 @@ const links: Array<{ id: Page; label: string; href: string }> = [
 ];
 const SOURCE = SOURCE_URL;
 const themes = [
-  { id: 'auto', label: 'Match the system', icon: 'monitor' },
+  { id: 'system', label: 'Match the system', icon: 'monitor' },
   { id: 'light', label: 'Light', icon: 'sun' },
   { id: 'dark', label: 'Dark', icon: 'moon' },
 ] as const;
@@ -41,7 +41,7 @@ const themes = [
       <div class="theme-switch" role="radiogroup" aria-label="Theme">
         {
           themes.map((t) => (
-            <button type="button" role="radio" aria-checked="false" data-theme-set={t.id} title={t.label} aria-label={t.label}>
+            <button type="button" role="radio" aria-checked="false" data-rw-theme-set={t.id} title={t.label} aria-label={t.label}>
               <Icon name={t.icon} size={16} />
             </button>
           ))
@@ -82,9 +82,9 @@ const themes = [
       <div class="theme-switch theme-switch--wide" role="radiogroup" aria-label="Theme">
         {
           themes.map((t) => (
-            <button type="button" role="radio" aria-checked="false" data-theme-set={t.id}>
+            <button type="button" role="radio" aria-checked="false" data-rw-theme-set={t.id}>
               <Icon name={t.icon} size={16} />
-              <span>{t.id === 'auto' ? 'Auto' : t.label}</span>
+              <span>{t.id === 'system' ? 'Auto' : t.label}</span>
             </button>
           ))
         }
@@ -94,38 +94,10 @@ const themes = [
 </header>
 
 <script>
-  // Theme: "auto" follows the system; light/dark are stored, as the house theme bootstrap reads them.
-  const KEY = 'theme';
-  const media = window.matchMedia('(prefers-color-scheme: dark)');
-  const stored = (): 'auto' | 'light' | 'dark' => {
-    try {
-      const v = localStorage.getItem(KEY);
-      return v === 'light' || v === 'dark' ? v : 'auto';
-    } catch {
-      return 'auto';
-    }
-  };
-  const sync = (mode: string): void => {
-    for (const b of document.querySelectorAll<HTMLElement>('[data-theme-set]')) b.setAttribute('aria-checked', String(b.dataset.themeSet === mode));
-  };
-  const apply = (mode: 'auto' | 'light' | 'dark'): void => {
-    try {
-      if (mode === 'auto') localStorage.removeItem(KEY);
-      else localStorage.setItem(KEY, mode);
-    } catch {
-      /* storage unavailable: the choice lasts for this page */
-    }
-    const dark = mode === 'dark' || (mode === 'auto' && media.matches);
-    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-    sync(mode);
-  };
-  for (const b of document.querySelectorAll<HTMLElement>('[data-theme-set]')) {
-    b.addEventListener('click', () => apply(b.dataset.themeSet as 'auto' | 'light' | 'dark'));
-  }
-  media.addEventListener('change', () => {
-    if (stored() === 'auto') apply('auto');
-  });
-  sync(stored());
+  // Theme controls: @robyrew/ui stores the choice under localStorage.theme (the key its pre-paint bootstrap reads),
+  // restamps data-theme, follows the OS while the choice is "system", and marks the chosen button (aria-checked).
+  import { initThemeControls } from '@robyrew/ui/theme.js';
+  initThemeControls();
 
   // The bar's height (with the space above it) as --site-head, so the converter's frame fills the rest of the screen.
   const bar = document.querySelector<HTMLElement>('.site-bar');
@@ -170,11 +142,6 @@ const themes = [
     top: 0;
     z-index: 40;
     padding: 0.6rem var(--gutter) 0;
-  }
-  /* Obsidian keeps its smoked glass in the light theme; a denser fill keeps the bar's ink readable over a light page. */
-  :global(:root[data-theme='light']) .site-bar,
-  :global(:root[data-theme='light']) .site-menu {
-    --t-alpha: 0.86;
   }
   .site-bar {
     --r: 18px;

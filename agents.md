@@ -307,3 +307,24 @@ ship, and declares `typescript ^5 || ^6` as a peer. npm refuses that peer next t
   installs with `engine-strict=false`, so it prints a warning until it moves to Node 26 itself.
 **Status:** Accepted.
 
+## ADR-0012 — The converter page as a landing page; the site on ui v0.4.0 (2026-11-11) · Accepted
+**Context:** The owner found the front page boring: no image and a lot of text (a hero paragraph, then the start
+screen's long drop text and three text-only steps). He also asked for light and dark to feel like one family without
+harsh contrast; ui v0.4.0 (2026-11-11) made both themes neutral greys with glass that follows the theme and added
+`--on-accent`.
+**Decision:**
+- The page is a landing page around the converter: a short hero with screenshots of the converter itself (a
+  fictional chat; desktop window plus phone), the converter at `#convert`, illustrated steps, six features, a
+  sources → UniversalChat → formats diagram and a closing call to action. All of it is `.landing` and hides once an
+  export is open.
+- Screenshots come from the app, not a mock-up: `web/scripts/screenshots.mjs` renders the workspace in WebKit and
+  `cwebp` writes them to `web/public/img/` (85–94 KB desktop, 47–49 KB phone). Each theme has its own set; CSS shows
+  the one matching `data-theme`, and both are `loading="lazy"` so the hidden set is not fetched.
+- The site moves to web-config v0.4.0. The header's theme switch uses `initThemeControls()` from
+  `@robyrew/ui/theme.js` instead of its own script, and the light-theme `--t-alpha` override for the old dark glass
+  is removed. The page maps the element's `--cc-primary` / `--cc-on-primary` to `--accent` / `--on-accent`; the
+  element keeps its own defaults for hosts without the house tokens.
+- In the element: the drop text is one line (the app chips sit under it), and sender names take a darker lightness
+  on light pages (`--cc-who-l`), where yellow and green hues were faint on white bubbles.
+**Status:** Accepted.
+

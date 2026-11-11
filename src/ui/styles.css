@@ -41,6 +41,8 @@ chat-converter-app {
   --cc-on-primary: #fff;
   --cc-r-frame: 20px;
   --cc-app-h: calc(100dvh - 7rem);
+  /* Lightness of sender names; light pages take a darker one so yellow and green hues stay readable on white. */
+  --cc-who-l: 58%;
 
   display: block;
   container: cc / inline-size;
@@ -60,6 +62,7 @@ chat-converter-app {
   --cc-mine: color-mix(in oklab, var(--cc-accent) 16%, var(--cc-panel));
   --cc-thumb: #fff;
   --cc-primary: var(--cc-accent);
+  --cc-who-l: 36%;
   color-scheme: light;
 }
 
@@ -1593,7 +1596,7 @@ select.cc-input--sm {
   margin-bottom: 0.1rem;
   font-size: 0.78rem;
   font-weight: 700;
-  color: color-mix(in oklab, hsl(var(--who-hue, 220) 72% 58%) 78%, var(--cc-ink));
+  color: color-mix(in oklab, hsl(var(--who-hue, 220) 72% var(--cc-who-l)) 78%, var(--cc-ink));
 }
 .cc-bubble__meta {
   display: flex;

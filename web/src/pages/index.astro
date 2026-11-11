@@ -1,26 +1,29 @@
 ---
 import Base from '../layouts/Base.astro';
-import Icon from '../components/Icon.astro';
+import Hero from '../components/landing/Hero.astro';
+import Steps from '../components/landing/Steps.astro';
+import Features from '../components/landing/Features.astro';
+import Flow from '../components/landing/Flow.astro';
+import Cta from '../components/landing/Cta.astro';
 import '@robyrew/chat-converter/ui/styles.css';
+import '../styles/landing.css';
 ---
 
 <Base
   title="Chat Converter — move your chats between apps"
-  description="Convert a chat export from Telegram, WhatsApp, Instagram, Facebook, Snapchat, VSCO or Hinge into what another app imports, entirely in your browser."
+  description="Convert a chat export from WhatsApp, Telegram, Instagram, Facebook, Snapchat, VSCO or Hinge into a file another app imports, entirely in your browser."
   page="convert"
 >
-  <section class="hero" data-hero>
-    <p class="hero__eyebrow"><Icon name="lock" size={14} /> Private · runs in your browser</p>
-    <h1>Move your chats <span class="hero__grad">between apps</span></h1>
-    <p class="hero__lead">
-      Turn a Telegram, WhatsApp, Instagram, Facebook, Snapchat, VSCO or Hinge export into the package Telegram
-      imports, a lossless UniversalChat archive, a web page and more.
-    </p>
+  <Hero />
+
+  <section id="convert" class="app-host" aria-label="Converter">
+    <chat-converter-app></chat-converter-app>
   </section>
 
-  <div class="app-host">
-    <chat-converter-app></chat-converter-app>
-  </div>
+  <Steps />
+  <Features />
+  <Flow />
+  <Cta />
 </Base>
 
 <script>
@@ -30,7 +33,31 @@ import '@robyrew/chat-converter/ui/styles.css';
   defineChatConverter();
 
   if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    gsap.from('.hero > *', { y: 14, opacity: 0, duration: 0.7, stagger: 0.07, ease: 'power3.out', clearProps: 'all' });
-    gsap.from('.cc-start > *', { y: 18, opacity: 0, duration: 0.7, delay: 0.18, stagger: 0.08, ease: 'power3.out', clearProps: 'all' });
+    const hero = gsap.timeline({ defaults: { ease: 'power3.out' } });
+    hero
+      .from('.hero__copy > *', { y: 18, opacity: 0, duration: 0.7, stagger: 0.07, clearProps: 'all' })
+      .from('.shot--desktop', { y: 36, opacity: 0, duration: 0.9, clearProps: 'all' }, 0.1)
+      .from('.shot--phone', { y: 48, opacity: 0, duration: 0.9, clearProps: 'all' }, 0.3)
+      .from('.float-chip', { y: 10, opacity: 0, scale: 0.92, duration: 0.5, stagger: 0.12, clearProps: 'all' }, 0.6);
+    gsap.to('.float-chip', { y: -7, duration: 2.6, ease: 'sine.inOut', repeat: -1, yoyo: true, stagger: 0.7, delay: 1.4 });
+
+    // Sections that start below the fold rise in as they come into view. They are hidden here, by script, so a page
+    // whose script does not run still shows them.
+    const PARTS = '.section__head, .step, .feature, .flow, .closing, .section__more';
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          io.unobserve(entry.target);
+          gsap.to(entry.target.querySelectorAll(PARTS), { y: 0, opacity: 1, duration: 0.7, stagger: 0.06, ease: 'power3.out', clearProps: 'all' });
+        }
+      },
+      { rootMargin: '0px 0px -8% 0px' },
+    );
+    for (const section of document.querySelectorAll('[data-reveal]')) {
+      if (section.getBoundingClientRect().top < window.innerHeight) continue;
+      gsap.set(section.querySelectorAll(PARTS), { y: 24, opacity: 0 });
+      io.observe(section);
+    }
   }
 </script>
