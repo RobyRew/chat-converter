@@ -55,8 +55,9 @@ defineChatConverter(); // <chat-converter-app></chat-converter-app>
 `web/` is the site at <https://chat-converter.robyrew.com>: the converter (`/`), the formats it reads and
 writes (`/formats`) and a step-by-step guide from export to Telegram import (`/guide`), with light and dark
 themes. It is published as `ghcr.io/robyrew/chat-converter` (the root `Dockerfile` on
-`ghcr.io/robyrew/static-web`, built by `.github/workflows/build-image.yml` through RobyRew/platform). See
-ADR-0008, ADR-0010 and ADR-0011 (Node 26, TypeScript 7) in `agents.md`, and `docs/app.md` for the UI.
+`ghcr.io/robyrew/static-web`, built by `.github/workflows/build-image.yml` through RobyRew/platform after
+the same workflow has run the library's `npm run typecheck` and `npm test`). See ADR-0008, ADR-0010, ADR-0011
+(Node 26, TypeScript 7) and ADR-0013 (CI) in `agents.md`, and `docs/app.md` for the UI.
 
 ## License
 

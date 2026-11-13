@@ -328,3 +328,21 @@ harsh contrast; ui v0.4.0 (2026-11-11) made both themes neutral greys with glass
   on light pages (`--cc-who-l`), where yellow and green hues were faint on white bubbles.
 **Status:** Accepted.
 
+## ADR-0013 — CI runs the library's type check and tests before the image build (2026-11-13) · Accepted
+**Amends** ADR-0008: the image build waits for the tests.
+**Context:** `.github/workflows/build-image.yml` only built the site image, and the image build runs the site's
+check and build. Nothing in CI ran the library's `npm run typecheck` (three tsconfigs) or its vitest suite; they ran
+only on a developer's machine. A commit that broke an importer could be published to chat-converter.robyrew.com,
+and a version tag on it could reach ChatForge through its daily bump.
+**Decision:**
+- A `test` job installs the root with `npm ci --ignore-scripts` on Node 26 and runs `npm run typecheck` and
+  `npm test`. The real-export tests skip themselves without `CHAT_CONVERTER_REAL_EXPORTS` /
+  `CHAT_CONVERTER_REAL_WHATSAPP`, so CI uses the synthetic fixtures only.
+- The `build` job (the platform workflow) `needs: test` and runs only for `refs/heads/main` outside pull requests.
+  Before this, a manual run on any branch published `:latest` and requested a deploy.
+- The workflow also runs on pull requests and on `v*` tag pushes, tests only, so each version tag ChatForge's bump
+  can install has a test run of its own.
+- `actions/checkout` (v7.0.1) and `actions/setup-node` (v7.1.0) are pinned by commit SHA, as ChatForge's CI pins
+  its actions.
+**Status:** Accepted.
+
